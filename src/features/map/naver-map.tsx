@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import {
   DEFAULT_ZOOM,
+  FIT_BOUNDS_MARGIN,
   NAVER_MAP_CLIENT_ID,
   naverMapsSdkUrl,
   readToken,
@@ -142,7 +143,7 @@ export default function NaverMap({
 
     const skip = firstRadiusRun.current && initial.current.zoom !== null;
     firstRadiusRun.current = false;
-    if (!skip) map.fitBounds(circle.getBounds());
+    if (!skip) map.fitBounds(circle.getBounds(), FIT_BOUNDS_MARGIN);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, radius]);
 

@@ -28,6 +28,18 @@ export const RADIUS_OPTIONS = [30, 50, 100, 200] as const;
 export const DEFAULT_RADIUS = 50;
 
 /**
+ * fitBounds 여백(px). 없으면 반경 원이 화면 끝에 딱 붙어서 원으로 안 보이고
+ * 그냥 확대된 지도처럼 읽힌다. 위아래는 배너·반경 토글에 가리지 않을 만큼 더 준다.
+ * 지도 API 에 넘기는 값이라 CSS 토큰이 아니다.
+ */
+export const FIT_BOUNDS_MARGIN = {
+  top: 56,
+  bottom: 56,
+  left: 24,
+  right: 24,
+};
+
+/**
  * 지도 SDK 는 CSS 를 모른다. 색·투명도를 JS 값으로 넘겨야 해서 토큰을 읽어온다.
  * 코드에 hex 를 박지 않기 위한 우회로다 (CLAUDE.md 스타일 규칙).
  *
