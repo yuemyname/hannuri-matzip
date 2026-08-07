@@ -1,10 +1,10 @@
-import { ModalPlaceholder } from "@/components/shell-placeholder";
+import { Modal } from "@/components/modal";
 import { MeView } from "@/features/me/me-view";
 
 export default function Page() {
   return (
-    <ModalPlaceholder>
+    <Modal title="내 정보">
       <MeView />
-    </ModalPlaceholder>
+    </Modal>
   );
 }

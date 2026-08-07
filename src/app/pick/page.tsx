@@ -1,10 +1,12 @@
-import { PagePlaceholder } from "@/components/shell-placeholder";
+import { PageShell } from "@/components/page-shell";
 import { PickView } from "@/features/pick/pick-view";
+
+export const metadata = { title: "점메추" };
 
 export default function Page() {
   return (
-    <PagePlaceholder>
+    <PageShell title="점메추">
       <PickView />
-    </PagePlaceholder>
+    </PageShell>
   );
 }

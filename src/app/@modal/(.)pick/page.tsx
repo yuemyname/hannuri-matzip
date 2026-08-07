@@ -1,10 +1,10 @@
-import { ModalPlaceholder } from "@/components/shell-placeholder";
+import { Modal } from "@/components/modal";
 import { PickView } from "@/features/pick/pick-view";
 
 export default function Page() {
   return (
-    <ModalPlaceholder>
+    <Modal title="점메추">
       <PickView />
-    </ModalPlaceholder>
+    </Modal>
   );
 }

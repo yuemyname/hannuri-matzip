@@ -1,10 +1,10 @@
-import { ModalPlaceholder } from "@/components/shell-placeholder";
+import { Modal } from "@/components/modal";
 import { RestaurantNewView } from "@/features/restaurants/restaurant-new-view";
 
 export default function Page() {
   return (
-    <ModalPlaceholder>
+    <Modal title="맛집 등록">
       <RestaurantNewView />
-    </ModalPlaceholder>
+    </Modal>
   );
 }

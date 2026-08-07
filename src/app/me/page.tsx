@@ -1,10 +1,12 @@
-import { PagePlaceholder } from "@/components/shell-placeholder";
+import { PageShell } from "@/components/page-shell";
 import { MeView } from "@/features/me/me-view";
+
+export const metadata = { title: "내 정보" };
 
 export default function Page() {
   return (
-    <PagePlaceholder>
+    <PageShell title="내 정보">
       <MeView />
-    </PagePlaceholder>
+    </PageShell>
   );
 }

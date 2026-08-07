@@ -1,5 +1,7 @@
-import { PagePlaceholder } from "@/components/shell-placeholder";
+import { PageShell } from "@/components/page-shell";
 import { RestaurantDetailView } from "@/features/restaurants/restaurant-detail-view";
+
+export const metadata = { title: "맛집 상세" };
 
 export default async function Page({
   params,
@@ -8,8 +10,8 @@ export default async function Page({
 }) {
   const { id } = await params;
   return (
-    <PagePlaceholder>
+    <PageShell title="맛집 상세">
       <RestaurantDetailView id={id} />
-    </PagePlaceholder>
+    </PageShell>
   );
 }

@@ -1,10 +1,12 @@
-import { PagePlaceholder } from "@/components/shell-placeholder";
+import { PageShell } from "@/components/page-shell";
 import { RestaurantNewView } from "@/features/restaurants/restaurant-new-view";
+
+export const metadata = { title: "맛집 등록" };
 
 export default function Page() {
   return (
-    <PagePlaceholder>
+    <PageShell title="맛집 등록">
       <RestaurantNewView />
-    </PagePlaceholder>
+    </PageShell>
   );
 }

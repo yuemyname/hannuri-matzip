@@ -1,4 +1,4 @@
-import { ModalPlaceholder } from "@/components/shell-placeholder";
+import { Modal } from "@/components/modal";
 import { RestaurantDetailView } from "@/features/restaurants/restaurant-detail-view";
 
 export default async function Page({
@@ -8,8 +8,8 @@ export default async function Page({
 }) {
   const { id } = await params;
   return (
-    <ModalPlaceholder>
+    <Modal title="맛집 상세">
       <RestaurantDetailView id={id} />
-    </ModalPlaceholder>
+    </Modal>
   );
 }

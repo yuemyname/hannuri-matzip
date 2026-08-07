@@ -92,7 +92,7 @@
   토큰·3종 컴포넌트·`/design` 과 DoD 4개는 전부 끝났다. 0.6 이 Dialog/Sheet 를 쓰므로
   그 전에는 반드시 필요하다.
 
-### [ ] 0.6 셸 + 모달 인프라
+### [~] 0.6 셸 + 모달 인프라
 > `SHELL.md` 전체가 이 태스크의 스펙이다. 여기가 어긋나면 P3~P5를 전부 다시 짠다.
 
 - `layout.tsx` — 헤더 + `@modal` 슬롯
@@ -106,6 +106,12 @@
   - 모달 URL 복사 → 새 탭 붙여넣기 → 정상 진입
   - iOS Safari에서 주소창 노출/숨김 시 모달 하단이 잘리지 않음
   - Esc / 배경 탭 / 아래로 드래그 세 경로 모두 닫힘
+- **shadcn 대신 `@radix-ui/react-dialog` 위에 직접 만들었다.** `ui.shadcn.com` 이 차단돼
+  CLI 를 못 쓰는데, shadcn 의 Dialog·Sheet 도 결국 이 패키지를 감싼 것이라 토대는 같다.
+  SHELL.md §3 이 요구하는 건 "Radix 가 처리한다" 이고 그건 충족한다.
+  나중에 `shadcn add dialog sheet` 를 돌려도 `<Modal>` 래퍼는 우리 것이므로 버릴 게 없다.
+- ⚠️ **iOS Safari 주소창 확인만 남았다.** `dvh` + `env(safe-area-inset-bottom)` 으로
+  짜뒀지만 실기기에서만 검증된다. 나머지 DoD 4개는 Chromium 360px/1280px 에서 확인.
 
 ---
 
