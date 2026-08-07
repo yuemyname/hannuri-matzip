@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { Coords } from "./use-current-position";
+import type { LatLng } from "./map-store";
 
 /**
  * 지도는 SSR 하지 않는다 — 서버에서 window.naver 에 닿으면 안 된다 (SPEC §1.1).
@@ -19,14 +20,18 @@ const NaverMap = dynamic(() => import("./naver-map"), {
   ),
 });
 
-export function MapView({
-  center,
-  me,
-  radius,
-}: {
-  center: { lat: number; lng: number };
+export type MapViewProps = {
+  /** 지도 생성 시 한 번만 쓴다. 이후 카메라는 focus / radius 가 움직인다 */
+  initialCenter: LatLng;
+  /** 저장된 줌. null 이면 저장된 뷰가 없다는 뜻이라 반경에 맞춰 잡는다 */
+  initialZoom: number | null;
+  /** 여기로 옮기라는 신호. 값이 바뀔 때만 panTo 한다 */
+  focus: LatLng | null;
   me: Coords | null;
   radius: number;
-}) {
-  return <NaverMap center={center} me={me} radius={radius} />;
+  onViewChange: (center: LatLng, zoom: number) => void;
+};
+
+export function MapView(props: MapViewProps) {
+  return <NaverMap {...props} />;
 }

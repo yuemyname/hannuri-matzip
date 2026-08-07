@@ -9,9 +9,12 @@ import {
   readToken,
   readTokenNumber,
 } from "./config";
-import type { Coords } from "./use-current-position";
+import type { MapViewProps } from "./map-view";
 
 type Status = "loading" | "ready" | "no-key" | "load-failed" | "auth-failed";
+
+/** 지도를 움직이는 동안 스토어에 계속 쓰지 않도록 잠깐 모은다 (WBS 1.4 "debounce") */
+const SAVE_DEBOUNCE_MS = 300;
 
 const MESSAGE: Record<Exclude<Status, "loading" | "ready">, string> = {
   "no-key":
@@ -27,21 +30,23 @@ const MESSAGE: Record<Exclude<Status, "loading" | "ready">, string> = {
  * 이 컴포넌트는 메인에서만 마운트하고, 모달 안에서 새로 만들지 않는다.
  */
 export default function NaverMap({
-  center,
+  initialCenter,
+  initialZoom,
+  focus,
   me,
   radius,
-}: {
-  center: { lat: number; lng: number };
-  /** 실제 위치. 못 얻었으면 null — 이때는 내 위치 마커를 그리지 않는다 */
-  me: Coords | null;
-  /** 반경(m). Circle 반지름이자 fitBounds 기준 */
-  radius: number;
-}) {
+  onViewChange,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<naver.maps.Map | null>(null);
   const meMarkerRef = useRef<naver.maps.Marker | null>(null);
   const accuracyRef = useRef<naver.maps.Circle | null>(null);
   const radiusRef = useRef<naver.maps.Circle | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // idle 리스너는 지도 생성 시 한 번만 붙는다. 최신 콜백을 ref 로 넘겨준다.
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
   const [status, setStatus] = useState<Status>(
     NAVER_MAP_CLIENT_ID ? "loading" : "no-key",
   );
@@ -57,6 +62,7 @@ export default function NaverMap({
 
   useEffect(() => {
     return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
       meMarkerRef.current?.setMap(null);
       accuracyRef.current?.setMap(null);
       radiusRef.current?.setMap(null);
@@ -65,8 +71,8 @@ export default function NaverMap({
     };
   }, []);
 
-  // 최초 생성에만 쓴다. 이후 이동은 아래 effect 가 panTo 로 처리한다.
-  const initialCenter = useRef(center);
+  // 최초 생성에만 쓴다. 이후 카메라는 focus / radius 가 움직인다.
+  const initial = useRef({ center: initialCenter, zoom: initialZoom });
 
   const initMap = () => {
     // SSR 에서는 여기까지 오지 않는다 — 이 컴포넌트는 ssr: false 로만 마운트된다.
@@ -76,14 +82,24 @@ export default function NaverMap({
       return;
     }
 
-    mapRef.current = new naver.maps.Map(containerRef.current, {
+    const map = new naver.maps.Map(containerRef.current, {
       center: new naver.maps.LatLng(
-        initialCenter.current.lat,
-        initialCenter.current.lng,
+        initial.current.center.lat,
+        initial.current.center.lng,
       ),
-      zoom: DEFAULT_ZOOM,
-      // 반경 Circle·현재위치 마커는 1.3, 맛집 마커는 2.3 에서 올린다.
+      zoom: initial.current.zoom ?? DEFAULT_ZOOM,
     });
+
+    // 사용자가 움직인 결과를 스토어에 적는다. idle 은 이동·줌이 끝났을 때만 온다.
+    naver.maps.Event.addListener(map, "idle", () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        const c = map.getCenter();
+        onViewChangeRef.current({ lat: c.y, lng: c.x }, map.getZoom());
+      }, SAVE_DEBOUNCE_MS);
+    });
+
+    mapRef.current = map;
     setStatus("ready");
   };
 
@@ -93,7 +109,7 @@ export default function NaverMap({
     const stroke = readToken("--color-brand-500");
     radiusRef.current = new naver.maps.Circle({
       map,
-      center: new naver.maps.LatLng(center.lat, center.lng),
+      center: map.getCenter(),
       radius,
       // 토큰을 못 읽으면 색 옵션을 빼고 SDK 기본값에 맡긴다
       ...(stroke ? { strokeColor: stroke, fillColor: stroke } : {}),
@@ -104,24 +120,29 @@ export default function NaverMap({
     return radiusRef.current;
   };
 
-  // 위치를 얻으면 지도를 옮긴다. 재생성이 아니라 이동이다 — 인스턴스는 하나로 유지한다.
+  // focus 가 바뀔 때만 옮긴다. 저장된 뷰로 복원한 뒤 위치가 도착했다고 해서
+  // 멋대로 튕기면 안 되기 때문에, 옮길지 말지는 MapPanel 이 정한다.
   useEffect(() => {
     const map = mapRef.current;
-    if (status !== "ready" || !map) return;
-    const at = new naver.maps.LatLng(center.lat, center.lng);
+    if (status !== "ready" || !map || !focus) return;
+    const at = new naver.maps.LatLng(focus.lat, focus.lng);
     ensureRadiusCircle(map).setCenter(at);
     map.panTo(at);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, center.lat, center.lng]);
+  }, [status, focus]);
 
   // 반경이 바뀌면 반지름과 줌이 함께 움직인다 (WBS 1.3 DoD).
-  // 카메라를 건드리므로 반경 변경에만 반응한다 — center 까지 넣으면 이동할 때마다 줌이 튄다.
+  // 첫 실행에서 저장된 줌이 있으면 fitBounds 를 건너뛴다 — 복원한 뷰를 덮어쓰지 않으려고.
+  const firstRadiusRun = useRef(true);
   useEffect(() => {
     const map = mapRef.current;
     if (status !== "ready" || !map) return;
     const circle = ensureRadiusCircle(map);
     circle.setRadius(radius);
-    map.fitBounds(circle.getBounds());
+
+    const skip = firstRadiusRun.current && initial.current.zoom !== null;
+    firstRadiusRun.current = false;
+    if (!skip) map.fitBounds(circle.getBounds());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, radius]);
 

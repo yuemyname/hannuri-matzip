@@ -1,23 +1,63 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapView } from "./map-view";
 import { useCurrentPosition } from "./use-current-position";
-import { DEFAULT_RADIUS, RADIUS_OPTIONS } from "./config";
+import { useMapView, type LatLng } from "./map-store";
+import { RADIUS_OPTIONS } from "./config";
 
 /**
- * 지도 + 위치 상태 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
- * 반경 Circle 과 현재위치 마커는 1.3, 뷰 상태 복원은 1.4 에서 붙는다.
+ * 지도 + 위치 배너 + 반경 토글. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
+ * 카메라의 정본은 zustand 스토어다 — 풀페이지 fallback 을 다녀와도 뷰가 유지된다.
  */
 export function MapPanel() {
-  const { status, coords, center, isFallback, lowAccuracy, request } =
-    useCurrentPosition();
-  // 2.4 에서 필터바로, 1.4 에서 zustand 로 옮겨간다. 지금은 여기 둔다.
-  const [radius, setRadius] = useState<number>(DEFAULT_RADIUS);
+  const {
+    status,
+    coords,
+    center: geoCenter,
+    isFallback,
+    lowAccuracy,
+    request,
+  } = useCurrentPosition();
+  const center = useMapView((s) => s.center);
+  const zoom = useMapView((s) => s.zoom);
+  const radius = useMapView((s) => s.radius);
+  const setView = useMapView((s) => s.setView);
+  const setRadius = useMapView((s) => s.setRadius);
+
+  // skipHydration 이라 마운트 후 직접 복원한다.
+  useEffect(() => {
+    void useMapView.persist.rehydrate();
+  }, []);
+
+  // 카메라를 옮길지 말지. 저장된 뷰가 있으면 위치를 얻어도 함부로 옮기지 않는다 —
+  // 그러면 돌아올 때마다 내 위치로 튕겨서 복원이 무의미해진다.
+  const askedRef = useRef(false);
+  const [focus, setFocus] = useState<LatLng | null>(null);
+
+  useEffect(() => {
+    if (!coords) return;
+    if (askedRef.current || center === null) {
+      setFocus({ lat: coords.lat, lng: coords.lng });
+      askedRef.current = false;
+    }
+  }, [coords, center]);
+
+  const handleRequest = () => {
+    askedRef.current = true;
+    request();
+  };
 
   return (
     <div className="relative size-full">
-      <MapView center={center} me={coords} radius={radius} />
+      <MapView
+        initialCenter={center ?? geoCenter}
+        initialZoom={zoom}
+        focus={focus}
+        me={coords}
+        radius={radius}
+        onViewChange={setView}
+      />
 
       {/* 배너는 지도 위에 겹친다. 지도 조작을 막지 않도록 바깥은 클릭을 통과시킨다 */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-3">
@@ -25,7 +65,7 @@ export function MapPanel() {
           status={status}
           isFallback={isFallback}
           lowAccuracy={lowAccuracy}
-          onRequest={request}
+          onRequest={handleRequest}
         />
       </div>
 
@@ -47,7 +87,7 @@ export function MapPanel() {
                   : "text-foreground hover:bg-muted"
               }`}
             >
-              {m < 1000 ? `${m}m` : `${m / 1000}km`}
+              {m}m
             </button>
           ))}
         </div>
