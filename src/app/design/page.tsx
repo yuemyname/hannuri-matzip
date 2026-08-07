@@ -5,7 +5,7 @@ import { ChipDemo } from "./chip-demo";
 
 // 개발 전용 화면. 배포돼도 색인되지 않게 막는다.
 export const metadata: Metadata = {
-  title: "디자인 토큰 — hannuri-matzip",
+  title: "디자인 토큰",
   robots: { index: false, follow: false },
 };
 
