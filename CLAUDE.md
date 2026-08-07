@@ -39,8 +39,8 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 ### 토큰
 - 색·폰트·간격·radius·shadow는 **전부 토큰 경유.**
   컴포넌트 파일에 hex나 raw px가 들어가면 실패다.
-- 토큰 원본은 리포 루트의 `design-tokens.css`. WBS 0.5에서 `src/app/globals.css`로
-  이관한 뒤부터는 그쪽이 정본이고, 루트 파일은 삭제한다.
+- 토큰 정본은 `src/app/globals.css`. (0.5에서 루트 `design-tokens.css`를 여기로
+  이관하고 원본은 삭제했다.)
 - Tailwind 기본 팔레트 사용 금지. `bg-orange-500` ✗ → `bg-brand-600` ✓,
   `text-gray-500` ✗ → `text-ink-500` ✓
 - 의미가 있는 곳은 시맨틱 이름을 우선한다: `text-muted-foreground` > `text-ink-500`
