@@ -6,7 +6,9 @@
 ## 작업 방식
 
 - WBS 태스크 하나 = 커밋 하나. DoD를 만족하기 전에 다음 태스크로 넘어가지 않는다.
-- 태스크 완료 시 WBS.md의 해당 항목을 `[x]`로 바꾸고 같은 커밋에 포함한다.
+- 태스크 완료 시 `WBS.md`의 해당 항목을 `[x]`로 바꾸고 **같은 커밋에 포함한다.**
+  세션이 바뀌어도 이게 인수인계서 역할을 한다.
+- 태스크 하나가 끝나면 멈추고 보고한다. 여러 태스크를 이어서 진행하지 않는다.
 - 태스크 시작 전 해당 SPEC 절을 읽는다. SPEC에 이미 정해진 건 다시 제안하지 않는다.
 - SPEC에 없는 결정이 필요하면 **추측하지 말고 물어본다.** 특히 스키마, 외부 API 파라미터.
 - 파일을 새로 만들기 전에 기존 파일에 넣을 자리가 있는지 먼저 본다.
@@ -34,8 +36,10 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 ## 스타일 규칙
 
 ### 토큰
-- 색·폰트·간격·radius·shadow는 **전부 `src/app/globals.css` 토큰 경유.**
+- 색·폰트·간격·radius·shadow는 **전부 토큰 경유.**
   컴포넌트 파일에 hex나 raw px가 들어가면 실패다.
+- 토큰 원본은 리포 루트의 `design-tokens.css`. WBS 0.5에서 `src/app/globals.css`로
+  이관한 뒤부터는 그쪽이 정본이고, 루트 파일은 삭제한다.
 - Tailwind 기본 팔레트 사용 금지. `bg-orange-500` ✗ → `bg-brand-600` ✓,
   `text-gray-500` ✗ → `text-ink-500` ✓
 - 의미가 있는 곳은 시맨틱 이름을 우선한다: `text-muted-foreground` > `text-ink-500`

@@ -27,7 +27,7 @@
 | 영역 | 선택 | 비고 |
 |---|---|---|
 | 프레임워크 | Next.js 15 (App Router) + TypeScript | strict mode |
-| 스타일 | Tailwind CSS v4 | |
+| 스타일 | Tailwind CSS v4 + shadcn/ui | 토큰은 `design-tokens.css` 단일 소스 |
 | 지도 | **NAVER Maps JS API v3 (Web Dynamic Map)** | 클라이언트 전용 |
 | DB / Auth / Storage | Supabase (Postgres + PostGIS) | |
 | 상태 | TanStack Query v5 + zustand(지도 뷰 상태만) | |
@@ -241,6 +241,12 @@ create or replace function pick_restaurant(
 
 ## 4. 화면 정의
 
+> ⚠️ 이 절의 화면 **내용**(무엇을 보여주는가)은 유효하지만,
+> **띄우는 방식**은 `SHELL.md`가 대체한다.
+> `/login`을 제외한 모든 화면은 메인 위에 모달로 뜨며, 메인은 언마운트되지 않는다.
+> 아래에서 "페이지"라고 쓰인 것은 전부 "모달 + 풀페이지 fallback"으로 읽는다.
+> 충돌 시 `SHELL.md`가 우선.
+
 ### 4.1 `/` — 메인 (지도 + 리스트)
 
 레이아웃 (모바일 우선):
@@ -347,6 +353,9 @@ navigator.geolocation.getCurrentPosition(ok, err, {
 ---
 
 ## 7. 디자인 방향
+
+> 구체적인 토큰 값(색 스케일, 타입 스케일, radius, shadow)은 `design-tokens.css`가
+> 단일 소스다. 이 절은 그 의도를 설명한다.
 
 - 사내 툴이지만 "매일 점심때 여는 앱"이므로 밝고 식욕 도는 톤
 - 액센트: 따뜻한 오렌지-레드 계열 1색 + 중립 그레이 스케일
