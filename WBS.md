@@ -37,7 +37,8 @@
 - PostGIS 확장 활성화
 - `SPEC.md §2.1` 테이블 전부 마이그레이션 파일로 작성 (`supabase/migrations/`)
 - `restaurant_stats` 뷰
-- **DoD**: `supabase db reset` 후 스키마 재현 가능, 테이블 7개 존재 확인
+- **DoD**: `supabase db reset` 후 스키마 재현 가능,
+  테이블 6개 + 뷰 `restaurant_stats` 1개 존재 확인
 
 ### [ ] 0.3 RLS 정책
 - `SPEC.md §2.3` 정책 전부 적용

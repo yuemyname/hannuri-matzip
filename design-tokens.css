@@ -43,7 +43,7 @@
   --color-warning: #B4700F;
   --color-danger:  #A81B1B; /* 브랜드 오렌지와 헷갈리므로 항상 텍스트 라벨 병기 */
 
-  /* Category chip — 8종 (SPEC §2.1 category) */
+  /* Category chip — 7종 (SPEC §2.1 category) */
   --color-cat-korean:  #C93A18;
   --color-cat-chinese: #B4700F;
   --color-cat-japanese:#1E6F8E;
