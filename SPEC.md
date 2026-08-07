@@ -83,7 +83,8 @@ create table profiles (
 create table restaurants (
   id           uuid primary key default gen_random_uuid(),
   name         text not null,
-  category     text not null,            -- 한식/중식/일식/양식/분식/카페/기타
+  category     text not null
+    check (category in ('한식','중식','일식','양식','분식','카페','기타')),
   address      text,
   road_address text,
   location     geography(Point, 4326) not null,
