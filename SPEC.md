@@ -12,7 +12,7 @@
 - 맛집 등록 / 수정 (구성원 누구나)
 - 별점(1–5) + 텍스트 리뷰 + 사진 첨부
 - 점메추 / 저메추 랜덤 추천 (필터 + 최근 중복 회피)
-- 사내 이메일 도메인 화이트리스트 로그인
+- 로그인 없는 익명 세션 (계정 생성·비밀번호 없음)
 
 ### Out of scope (v1)
 - 예약, 결제, 주문
@@ -57,7 +57,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=            # 서버 라우트 전용, 절대 클라이언트 노출 금지
 NAVER_SEARCH_CLIENT_ID=               # 네이버 개발자센터 (지역검색), 서버 전용
 NAVER_SEARCH_CLIENT_SECRET=           # 서버 전용
-ALLOWED_EMAIL_DOMAIN=company.com
 NEXT_PUBLIC_FALLBACK_LAT=37.5665      # GPS 거부 시 사무실 좌표
 NEXT_PUBLIC_FALLBACK_LNG=126.9780
 ```
@@ -83,7 +82,8 @@ create table profiles (
 create table restaurants (
   id           uuid primary key default gen_random_uuid(),
   name         text not null,
-  category     text not null,            -- 한식/중식/일식/양식/분식/카페/기타
+  category     text not null
+    check (category in ('한식','중식','일식','양식','분식','카페','기타')),
   address      text,
   road_address text,
   location     geography(Point, 4326) not null,
@@ -161,16 +161,32 @@ group by r.id;
 ### 2.3 RLS
 
 - 전 테이블 `enable row level security`.
-- `select`: `auth.role() = 'authenticated'` — 로그인한 사내 사용자는 전부 조회 가능.
+- `select`: `auth.role() = 'authenticated'` — 세션이 있으면 전부 조회 가능.
+  익명 세션도 `authenticated` 롤을 받는다 (§2.4). 세션 없이 anon 키만 있으면 거부된다.
 - `restaurants insert`: authenticated. `update/delete`: `created_by = auth.uid()`.
 - `reviews insert/update/delete`: `user_id = auth.uid()`.
 - `recommendation_logs`: 본인 것만 select/insert.
 - Storage 버킷 `review-photos`: 인증 사용자 읽기, 본인 경로(`{uid}/...`)만 쓰기.
 
-### 2.4 도메인 화이트리스트
+### 2.4 익명 세션
 
-Supabase Auth Hook (`before user created`) 또는 DB 트리거로
-`new.email not like '%@' || ALLOWED_EMAIL_DOMAIN` 이면 예외 발생시켜 가입 차단.
+로그인 화면이 없다. 최초 진입 시 세션이 없으면 `supabase.auth.signInAnonymously()` 로
+익명 세션을 발급한다. 사용자는 인증이 있다는 사실 자체를 몰라야 한다.
+
+- Supabase 콘솔에서 Anonymous Sign-in 활성화 + rate limit 설정
+- 익명 유저도 `auth.users` 에 행이 생기므로 `profiles.id` 참조는 그대로 유효하다
+- 익명 유저도 `authenticated` 롤을 받는다 (`is_anonymous` 클레임으로만 구분).
+  따라서 §2.3 정책이 그대로 동작한다
+- `profiles` 자동 생성 트리거로 `display_name` 을 랜덤 부여 (형용사+명사+4자리)
+- `signInAnonymously()` 는 앱 부트스트랩에서 한 번만, 단일 프로미스로 감싸 호출한다.
+  동시 호출이 겹치면 세션이 두 번 발급된다
+
+**세션은 브라우저에 저장된다.** 기기·브라우저가 바뀌거나 저장소를 비우면 다른 사용자가
+되고, 내 리뷰·등록 기록이 따라오지 않는다. 이 사실을 `/me` 에 한 줄로 고지한다 (§4.5).
+
+**접근 제한은 두지 않는다.** 사내 전용 전제를 포기했다 — URL 을 아는 사람은 누구나 쓸 수
+있다. 이메일 도메인 화이트리스트는 이메일이 없는 익명 세션과 양립하지 않으므로 v1 에서
+제외한다. 접근을 좁혀야 하면 사내망·VPN 등 앱 밖 수단으로 처리한다.
 
 ---
 
@@ -243,7 +259,7 @@ create or replace function pick_restaurant(
 
 > ⚠️ 이 절의 화면 **내용**(무엇을 보여주는가)은 유효하지만,
 > **띄우는 방식**은 `SHELL.md`가 대체한다.
-> `/login`을 제외한 모든 화면은 메인 위에 모달로 뜨며, 메인은 언마운트되지 않는다.
+> 로그인 화면이 없으므로 모든 화면이 메인 위에 모달로 뜨며, 메인은 언마운트되지 않는다.
 > 아래에서 "페이지"라고 쓰인 것은 전부 "모달 + 풀페이지 fallback"으로 읽는다.
 > 충돌 시 `SHELL.md`가 우선.
 
@@ -315,7 +331,9 @@ create or replace function pick_restaurant(
 
 ### 4.5 `/me`
 
-내가 쓴 리뷰, 내가 등록한 맛집, 최근 추천받은 곳 히스토리.
+내가 쓴 리뷰, 내가 등록한 맛집, 최근 추천받은 곳 히스토리. 닉네임 변경.
+
+세션 소실 고지 한 줄 — "이 기기에서만 내 기록으로 인식됩니다" (§2.4).
 
 ---
 
@@ -372,5 +390,7 @@ navigator.geolocation.getCurrentPosition(ok, err, {
 | 네이버 지도 인증 | `ncpClientId` 오기입, 서비스 URL 미등록 | 개발 착수 시 최소 지도 1개 띄우는 것부터 검증 |
 | 지역검색 좌표계 | 스케일/좌표계 변경 이력 있음 | 실제 응답 1회 검증 후 파서 확정 |
 | 초기 데이터 공백 | 맛집 0건이면 앱이 죽은 것처럼 보임 | 시드 스크립트로 사무실 주변 15곳 선등록 |
-| 리뷰 익명성 | 실명 노출 시 솔직한 저평점 안 남김 | v1은 실명, 별점만 익명 집계. 익명 리뷰는 v2 논의 |
+| 세션 소실 | 저장소를 비우거나 기기를 바꾸면 내 리뷰·등록 기록이 끊김 | `/me`에 고지. 계정 연결(익명→이메일 승격)은 v2 논의 |
+| 접근 제한 없음 | 사내 전용 전제를 포기해 URL을 아는 외부인도 등록·리뷰 가능 | v1은 감수. 좁혀야 하면 사내망·VPN 등 앱 밖에서 처리 |
+| 어뷰징 | 익명이라 스팸 등록·평점 조작 비용이 낮음 | Anonymous Sign-in rate limit. 신고·차단은 v2 논의 |
 | 네이버 리뷰 크롤링 | 약관 위반 | 하지 않음. 자체 리뷰만 |

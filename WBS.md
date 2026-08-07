@@ -10,7 +10,7 @@
 
 ## P0 — 기반 (반나절)
 
-### [ ] 0.1 프로젝트 스캐폴딩
+### [x] 0.1 프로젝트 스캐폴딩
 - `create-next-app` — TypeScript, Tailwind, App Router, `src/` 디렉터리
 - ESLint + Prettier, `strict: true`
 - 디렉터리 구조 생성:
@@ -33,11 +33,14 @@
 - **DoD**: `pnpm dev` 실행 시 빈 페이지 렌더, `pnpm build` 통과.
   `src/app/globals.css`는 `@import "tailwindcss"`만 있는 상태 (토큰은 0.5에서)
 
-### [ ] 0.2 Supabase 프로젝트 + 스키마
+### [x] 0.2 Supabase 프로젝트 + 스키마
 - PostGIS 확장 활성화
 - `SPEC.md §2.1` 테이블 전부 마이그레이션 파일로 작성 (`supabase/migrations/`)
 - `restaurant_stats` 뷰
-- **DoD**: `supabase db reset` 후 스키마 재현 가능, 테이블 7개 존재 확인
+- **DoD**: `supabase db reset` 후 스키마 재현 가능,
+  테이블 6개 + 뷰 `restaurant_stats` 1개 존재 확인
+- ⚠️ 작업 환경에서 Docker 이미지 레지스트리가 차단되어 `supabase db reset` 은 실행하지 못했다.
+  `pnpm db:verify`(로컬 Postgres + shim)로 대체 검증했다. 로컬에서 1회 재확인 필요.
 
 ### [ ] 0.3 RLS 정책
 - `SPEC.md §2.3` 정책 전부 적용

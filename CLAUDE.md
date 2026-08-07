@@ -90,6 +90,9 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 - 추천 결과는 **서버가 결정한다.** 클라이언트 랜덤 금지. 애니메이션은 응답 수신 후 연출일 뿐.
 - `SUPABASE_SERVICE_ROLE_KEY`, `NAVER_SEARCH_CLIENT_SECRET`은 서버 라우트 전용.
   `NEXT_PUBLIC_` 접두사 붙이지 말 것.
+- 카테고리 목록의 단일 소스는 `src/lib/categories.ts`.
+  DB check 제약, 필터칩, 등록 폼 셀렉트가 전부 여기서 파생된다.
+  값을 추가할 때는 마이그레이션과 이 파일을 같은 커밋에서 바꾼다.
 
 ### 하지 말 것
 - 네이버 플레이스 리뷰/평점 크롤링 (약관 위반)
