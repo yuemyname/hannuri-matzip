@@ -67,7 +67,10 @@ insert into storage.buckets (id, name, public)
   values ('review-photos', 'review-photos', false)
   on conflict (id) do nothing;
 
-alter table storage.objects enable row level security;
+-- `alter table storage.objects enable row level security` 는 여기 없다.
+-- 실물 Supabase 에서 storage.objects 소유자는 supabase_storage_admin 이고,
+-- postgres 로는 alter 가 안 된다 (`must be owner of table objects`).
+-- 어차피 실물은 RLS 가 켜진 채로 온다. 로컬 검증용 활성화는 tests/shim.sql 이 한다.
 
 create policy review_photos_object_select on storage.objects
   for select using (

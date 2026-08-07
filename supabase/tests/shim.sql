@@ -58,6 +58,10 @@ create table if not exists storage.objects (
   owner     uuid
 );
 
+-- 실물 Supabase 는 storage.objects 에 RLS 가 켜진 채로 온다. 마이그레이션은
+-- 소유자가 아니라 이걸 못 켜므로(`must be owner of table objects`) 여기서 켠다.
+alter table storage.objects enable row level security;
+
 -- 'uid/2026/a.webp' → {uid,2026}. 경로 첫 조각으로 소유자를 판별하는 데 쓴다.
 create or replace function storage.foldername(name text) returns text[]
 language sql immutable as $$
