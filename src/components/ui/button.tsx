@@ -18,6 +18,28 @@ const SIZE = {
 export type ButtonVariant = keyof typeof VARIANT;
 export type ButtonSize = keyof typeof SIZE;
 
+/**
+ * 버튼처럼 보여야 하는데 버튼이 아닌 것에 쓴다 — 주로 `Link`.
+ * 이동은 `a` 여야 새 탭·주소 복사가 되므로, `button` 에 onClick 으로 라우팅하지 않는다.
+ */
+export function buttonClass({
+  variant = "primary",
+  size = "md",
+  className,
+}: {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  className?: string;
+} = {}) {
+  return cn(
+    "inline-flex shrink-0 items-center justify-center rounded-md font-medium transition-colors",
+    "disabled:pointer-events-none disabled:opacity-50",
+    VARIANT[variant],
+    SIZE[size],
+    className,
+  );
+}
+
 export function Button({
   variant = "primary",
   size = "md",
@@ -31,13 +53,7 @@ export function Button({
     <button
       // 폼 안에서 실수로 submit 되지 않게 기본값을 둔다. 필요하면 호출부가 덮는다.
       type="button"
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-md font-medium transition-colors",
-        "disabled:pointer-events-none disabled:opacity-50",
-        VARIANT[variant],
-        SIZE[size],
-        className,
-      )}
+      className={buttonClass({ variant, size, className })}
       {...props}
     />
   );

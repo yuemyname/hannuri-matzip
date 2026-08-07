@@ -240,6 +240,22 @@ export default function NaverMap({
     }
   }, [status, me]);
 
+  // 시트를 접었다 펴면 지도 컨테이너 높이가 바뀐다. SDK 가 스스로 못 따라오는
+  // 경우가 있어 리사이즈를 알려준다.
+  useEffect(() => {
+    const map = mapRef.current;
+    const el = containerRef.current;
+    if (status !== "ready" || !map || !el) return;
+    if (typeof ResizeObserver === "undefined") return;
+    // 타입에는 있지만 SDK 버전에 따라 없을 수 있다. ResizeObserver 콜백에서 던지면
+    // 이후 리사이즈가 전부 죽는다.
+    const ro = new ResizeObserver(() => {
+      if (typeof map.refresh === "function") map.refresh();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [status]);
+
   // 맛집 마커 — diff 갱신. 전부 setMap(null) 후 재생성하면 필터를 바꿀 때마다
   // 지도가 통째로 깜빡인다 (CLAUDE.md, WBS 2.3 DoD).
   useEffect(() => {

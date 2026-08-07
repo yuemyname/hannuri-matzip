@@ -2,20 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MapView } from "./map-view";
-import { useCurrentPosition } from "./use-current-position";
+import type { useCurrentPosition } from "./use-current-position";
 import { useMapView, type LatLng } from "./map-store";
-import { RADIUS_OPTIONS } from "./config";
-import { useNearby } from "@/features/restaurants/use-nearby";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 
-// 매 렌더마다 새 배열을 넘기면 마커 이펙트가 헛돈다. 빈 값은 하나를 돌려 쓴다.
-const NONE: NearbyRestaurant[] = [];
-
 /**
- * 지도 + 위치 배너 + 반경 토글. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
+ * 지도 + 위치 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
  * 카메라의 정본은 zustand 스토어다 — 풀페이지 fallback 을 다녀와도 뷰가 유지된다.
+ *
+ * 조회와 필터는 `MainView` 가 들고 있다. 지도와 리스트가 같은 배열을 봐야
+ * 마커 수와 항목 수가 어긋나지 않는다. 반경 토글도 필터바로 옮겼다 (SPEC §4.1).
  */
-export function MapPanel() {
+export function MapPanel({
+  position,
+  restaurants,
+  selectedId,
+  onSelect,
+}: {
+  position: ReturnType<typeof useCurrentPosition>;
+  restaurants: NearbyRestaurant[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
   const {
     status,
     coords,
@@ -23,17 +31,11 @@ export function MapPanel() {
     isFallback,
     lowAccuracy,
     request,
-  } = useCurrentPosition();
+  } = position;
   const center = useMapView((s) => s.center);
   const zoom = useMapView((s) => s.zoom);
   const radius = useMapView((s) => s.radius);
-  const selectedId = useMapView((s) => s.selectedId);
   const setView = useMapView((s) => s.setView);
-  const setRadius = useMapView((s) => s.setRadius);
-  const setSelectedId = useMapView((s) => s.setSelectedId);
-
-  // 반경 조회. 기준점은 지도 중심이 아니라 내 위치(없으면 사무실 폴백)다.
-  const { data: restaurants, isError, refetch } = useNearby(geoCenter, radius);
 
   // skipHydration 이라 마운트 후 직접 복원한다.
   useEffect(() => {
@@ -67,59 +69,21 @@ export function MapPanel() {
         anchor={geoCenter}
         me={coords}
         radius={radius}
-        restaurants={restaurants ?? NONE}
+        restaurants={restaurants}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={onSelect}
         onViewChange={setView}
       />
 
-      {/* 배너는 지도 위에 겹친다. 지도 조작을 막지 않도록 바깥은 클릭을 통과시킨다 */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-center gap-2 p-3">
+      {/* 배너는 지도 위에 겹친다. 지도 조작을 막지 않도록 바깥은 클릭을 통과시킨다.
+          조회 실패·빈 결과 안내는 리스트가 맡는다 — 같은 말을 두 군데서 하지 않는다. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-3">
         <Notice
           status={status}
           isFallback={isFallback}
           lowAccuracy={lowAccuracy}
           onRequest={handleRequest}
         />
-
-        {/* 사과하지 않고 다음 행동을 알려준다 (CLAUDE.md) */}
-        {isError && (
-          <Bubble>
-            <span>맛집을 불러오지 못했어요</span>
-            <Action onClick={() => void refetch()}>다시 시도</Action>
-          </Bubble>
-        )}
-
-        {/* 반경 안에 아무것도 없을 때. 빈 지도를 설명 없이 두지 않는다 */}
-        {!isError && restaurants?.length === 0 && (
-          <Bubble>
-            <span>이 반경에는 아직 등록된 곳이 없어요</span>
-          </Bubble>
-        )}
-      </div>
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3">
-        <div
-          role="group"
-          aria-label="반경"
-          className="pointer-events-auto flex gap-1 rounded-chip border border-border bg-background p-1 shadow-pop"
-        >
-          {RADIUS_OPTIONS.map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={radius === m}
-              onClick={() => setRadius(m)}
-              className={`tnum rounded-chip px-3 py-1 text-label ${
-                radius === m
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground hover:bg-muted"
-              }`}
-            >
-              {m}m
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
