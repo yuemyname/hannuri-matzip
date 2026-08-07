@@ -364,3 +364,95 @@ $$;
 reset role;
 
 \echo '✓ 스키마 검증 통과'
+
+-- ── 6. restaurants_within RPC (SPEC §3.1) ────────────────────────────
+-- 이 절은 대량 데이터를 넣으므로 반드시 맨 뒤에 둔다.
+
+do $$
+begin
+  if to_regprocedure('restaurants_within(double precision, double precision, integer, text[], numeric)') is null then
+    raise exception 'restaurants_within 함수가 없다';
+  end if;
+end
+$$;
+
+-- 기준점(시청역) 주변에 알려진 거리로 몇 개 심는다.
+-- 위도 1도 ≈ 111.32km 이므로 미터를 위도 증분으로 환산한다.
+insert into restaurants(name, category, location, price_range, created_by)
+select
+  '거리테스트' || d || 'm',
+  '한식',
+  st_makepoint(126.9780, 37.5665 + d / 111320.0)::geography,
+  2,
+  '11111111-1111-1111-1111-111111111111'
+from unnest(array[20, 80, 150, 400]) as d;
+
+do $$
+declare names text[];
+begin
+  -- 반경 200m: 20 / 80 / 150 만 들어오고 400 은 빠져야 한다. 가까운 순서대로.
+  select array_agg(w.name order by w.distance_m)
+    into names
+    from restaurants_within(37.5665, 126.9780, 200) w
+   where w.name like '거리테스트%';
+
+  if names <> array['거리테스트20m','거리테스트80m','거리테스트150m'] then
+    raise exception '반경 200m 결과가 예상과 다르다: %', names;
+  end if;
+
+  -- 반경 50m 로 좁히면 20m 짜리만 남는다
+  select array_agg(w.name) into names
+    from restaurants_within(37.5665, 126.9780, 50) w
+   where w.name like '거리테스트%';
+  if names <> array['거리테스트20m'] then
+    raise exception '반경 50m 결과가 예상과 다르다: %', names;
+  end if;
+
+  -- 카테고리 필터
+  select array_agg(w.name) into names
+    from restaurants_within(37.5665, 126.9780, 200, array['중식']) w
+   where w.name like '거리테스트%';
+  if names is not null then
+    raise exception '중식 필터에 한식이 걸려 나왔다: %', names;
+  end if;
+end
+$$;
+
+-- 거리 계산이 실제와 맞는지 (오차 5m 이내)
+do $$
+declare d double precision;
+begin
+  select w.distance_m into d
+    from restaurants_within(37.5665, 126.9780, 200) w
+   where w.name = '거리테스트150m';
+  if abs(d - 150) > 5 then
+    raise exception 'distance_m 이 150m 와 %m 나 차이난다', round(abs(d - 150)::numeric, 1);
+  end if;
+end
+$$;
+
+-- 인덱스를 타는지. 행이 적으면 플래너가 Seq Scan 을 고르므로 충분히 채운다.
+insert into restaurants(name, category, location, created_by)
+select
+  '부하' || i,
+  '기타',
+  st_makepoint(126.5 + (i % 1000) * 0.001, 37.2 + (i / 1000) * 0.001)::geography,
+  '11111111-1111-1111-1111-111111111111'
+from generate_series(1, 5000) as i;
+analyze restaurants;
+
+do $$
+declare line text; plan text := '';
+begin
+  for line in
+    execute 'explain (analyze, costs off) select * from restaurants_within(37.5665, 126.9780, 200)'
+  loop
+    plan := plan || line || E'\n';
+  end loop;
+
+  if plan not like '%restaurants_location_idx%' then
+    raise exception E'GiST 인덱스를 안 탄다 (Seq Scan). 실행 계획:\n%', plan;
+  end if;
+  raise notice 'restaurants_within 실행 계획에 restaurants_location_idx 사용 확인';
+end
+$$;

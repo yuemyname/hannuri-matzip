@@ -170,10 +170,17 @@
 
 ## P2 — 맛집 조회
 
-### [ ] 2.1 `restaurants_within` RPC
+### [x] 2.1 `restaurants_within` RPC
 - `SPEC.md §3.1` 함수 작성
 - GiST 인덱스 확인 (`explain analyze`로 Index Scan 확인 — Seq Scan이면 실패)
 - **DoD**: 시드 데이터 기준 반경 200m 조회 결과가 육안으로 맞고, 실행 계획에 인덱스 사용됨
+- ✅ `Index Scan using restaurants_location_idx` 확인.
+  `Index Cond: location && _st_expand(..., 200)` — st_dwithin 이 인덱스로 내려간다.
+- ⚠️ **`restaurant_stats` 뷰가 매 호출마다 전체 맛집을 집계한다.** 실행 계획에서
+  반경 안 4건과 별개로 전체 행이 HashAggregate 를 탄다. 지금은 문제 없다 —
+  500건 1.2ms / 2,000건 1.1ms / 10,000건 5.2ms 로 SPEC §6 예산(500건 100ms) 안이다.
+  SPEC §2.2 도 "v1 은 뷰로 충분하다" 고 적어뒀다. 느려지면 §2.2 의 메모대로
+  `restaurants` 에 집계 컬럼 + 트리거로 전환한다.
 
 ### [ ] 2.2 시드 데이터
 - 사무실 주변 실제 맛집 15곳 + 메뉴 + 더미 리뷰 스크립트
