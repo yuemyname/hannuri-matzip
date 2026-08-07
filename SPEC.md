@@ -55,7 +55,7 @@ NEXT_PUBLIC_NAVER_MAP_CLIENT_ID=      # Web Dynamic Map Client ID (공개 OK, UR
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=            # 서버 라우트 전용, 절대 클라이언트 노출 금지
-NAVER_SEARCH_CLIENT_ID=               # 네이버 개발자센터 (지역검색), 서버 전용
+NAVER_SEARCH_CLIENT_ID=               # NAVER API HUB (지역검색), 서버 전용
 NAVER_SEARCH_CLIENT_SECRET=           # 서버 전용
 NEXT_PUBLIC_FALLBACK_LAT=37.537247    # GPS 거부 시 사무실 좌표
 NEXT_PUBLIC_FALLBACK_LNG=127.082473
@@ -345,8 +345,21 @@ create or replace function pick_restaurant(
 4. 카테고리, 가격대, 사내 메모, 대표메뉴 입력
 5. 저장 → 상세 페이지 이동
 
-> **네이버 지역검색 API 제약**: `GET https://openapi.naver.com/v1/search/local.json`,
-> 헤더 `X-Naver-Client-Id` / `X-Naver-Client-Secret`. **최대 5건**만 반환되고,
+> **네이버 지역검색 API 제약**: 2026-08 기준 이 API 는 네이버 개발자센터가 아니라
+> **NAVER API HUB(NCP 중개 운영)** 에서 발급받는다. 개발자센터 앱 등록 폼의
+> `사용 API` 목록에는 더 이상 `검색` 이 없다. 콘솔은
+> `console.ncloud.com/naver-api-hub` → Application 등록 → `지역` 선택.
+>
+> 그래서 호출 정보가 예전 문서와 다르다:
+>
+> | | 개발자센터(구) | NAVER API HUB(현재) |
+> |---|---|---|
+> | 도메인 | `openapi.naver.com` | `naverapihub.apigw.ntruss.com` |
+> | 경로 | `/v1/search/local.json` | `/search/v1/local` |
+> | 헤더 | `X-Naver-Client-Id` | `X-NCP-APIGW-API-KEY-ID` |
+> | 헤더 | `X-Naver-Client-Secret` | `X-NCP-APIGW-API-KEY` |
+>
+> 쿼리스트링(`query`, `display`)은 그대로다. **최대 5건**만 반환되고,
 > `mapx`/`mapy`가 WGS84 좌표 × 10^7 정수로 온다 → `lng = mapx / 1e7`, `lat = mapy / 1e7`.
 > 좌표 스케일은 구현 시작 시 실제 응답으로 반드시 1회 검증할 것 (과거 KATECH 좌표였음).
 > 검색 결과가 없으면 수동 입력 + 지도 핀 찍기 경로를 항상 열어둔다.
