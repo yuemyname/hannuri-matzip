@@ -111,7 +111,7 @@
 
 ## P1 — 지도 (핵심 리스크 구간, 먼저 뚫는다)
 
-### [ ] 1.1 네이버 지도 최소 렌더 ⚠️ 최우선
+### [~] 1.1 네이버 지도 최소 렌더 ⚠️ 최우선
 > 이 태스크가 막히면 프로젝트 전체가 막힌다. 가장 먼저 검증한다.
 > **P0.2보다 먼저 시도해도 좋다.**
 
@@ -121,6 +121,13 @@
 - `window.navermap_authFailure` 핸들러
 - 타입 선언 (`@types/navermaps` 또는 자체 `.d.ts`)
 - **DoD**: 로컬에서 지도 표시 + 콘솔 에러 0건. 스크린샷 확인.
+- ⚠️ **지도 실물은 아직 못 띄웠다.** 작업 환경에서 `oapi.map.naver.com` 이 차단돼 있고
+  NCP Client ID 도 없다. 코드·타입·폴백은 다 들어갔고 에러 경로 두 개만 확인했다.
+  - 키 없음 → 안내 표시, SDK 요청 아예 안 함
+  - 키 있음 + 로드 실패 → 안내 표시, 페이지 에러 0건
+  남은 확인: `.env.local` 에 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID` 를 넣고
+  NCP 콘솔 서비스 URL 에 `http://localhost:3000` 을 등록한 뒤 `pnpm dev` 로 지도가 뜨는지.
+  인증 실패하면 `navermap_authFailure` 가 잡아 서비스 URL 을 확인하라고 안내한다.
 
 ### [ ] 1.2 Geolocation 훅
 - `useCurrentPosition()` — `SPEC.md §5` 상태 머신 구현
