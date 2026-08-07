@@ -42,11 +42,14 @@
 - ⚠️ 작업 환경에서 Docker 이미지 레지스트리가 차단되어 `supabase db reset` 은 실행하지 못했다.
   `pnpm db:verify`(로컬 Postgres + shim)로 대체 검증했다. 로컬에서 1회 재확인 필요.
 
-### [ ] 0.3 RLS 정책
+### [x] 0.3 RLS 정책
 - `SPEC.md §2.3` 정책 전부 적용
 - Storage 버킷 `review-photos` 생성 + 정책
 - **DoD**: 세션 없는 상태(anon 키만)로 `select * from restaurants` 시 0건/거부,
   익명 세션 발급 후 조회 성공
+- ⚠️ `pnpm db:verify` 로 검증. Storage 는 shim 의 근사치라 실물 동작은 미검증이다.
+  SPEC §2.3 이 언급하지 않은 쓰기(메뉴, 리뷰 사진, 프로필 수정,
+  recommendation_logs 수정)는 정책이 없어 전부 거부된다 — 5.3 / 5.4 / 4.4 전에 결정 필요.
 
 ### [ ] 0.4 익명 세션
 > 로그인 UI 없음. 사용자는 인증이 있다는 사실 자체를 몰라야 한다.

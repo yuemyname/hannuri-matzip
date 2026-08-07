@@ -145,12 +145,16 @@ begin
 end
 $$;
 
--- ── 4. RLS ───────────────────────────────────────────────────────────
--- 0.3 에서 정책을 넣은 뒤 여기에 검사를 추가한다.
--- shim 이 anon/authenticated 롤과 auth.uid()/auth.role() 을 이미 만들어두므로,
---   set role authenticated;
---   select set_config('request.jwt.claims', '{"sub":"...","role":"authenticated"}', false);
--- 형태로 실제 정책 동작을 확인할 수 있다.
+-- ── 4. RLS (SPEC §2.3) ───────────────────────────────────────────────
+-- 두 번째 사용자. 남의 것을 건드릴 수 있는지 확인하는 데 쓴다.
+insert into auth.users(id, email)
+  values ('22222222-2222-2222-2222-222222222222', null);
+insert into profiles(id, display_name)
+  values ('22222222-2222-2222-2222-222222222222', '검증용2');
+insert into recommendation_logs(user_id, restaurant_id, meal_type)
+  select '11111111-1111-1111-1111-111111111111', id, 'lunch'
+    from restaurants where name = '김밥천국';
+
 do $$
 declare n int;
 begin
@@ -159,8 +163,131 @@ begin
    where schemaname = 'public' and rowsecurity
      and tablename in ('profiles','restaurants','menus','reviews',
                        'review_photos','recommendation_logs');
-  raise notice 'RLS 켜진 앱 테이블: %개 (0.3 완료 시 6개가 되어야 한다)', n;
+  if n <> 6 then
+    raise exception 'RLS 가 켜진 앱 테이블이 6개가 아니라 %개다', n;
+  end if;
 end
 $$;
+
+-- 롤을 바꾸면 그 안에서는 결과를 못 들고 나오므로 밖에 받아둔다.
+create table _rls(k text primary key, v bigint);
+
+-- 세션 없음(anon 키만) — 아무것도 안 보여야 한다. DoD 전반부.
+set role anon;
+reset request.jwt.claims;
+insert into _rls values ('anon_restaurants', (select count(*) from restaurants));
+insert into _rls values ('anon_profiles',    (select count(*) from profiles));
+reset role;
+
+-- 세션 있음 — 보여야 한다. DoD 후반부.
+set role authenticated;
+set request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+insert into _rls values ('auth_restaurants', (select count(*) from restaurants));
+insert into _rls values ('auth_own_logs',    (select count(*) from recommendation_logs));
+reset role;
+
+-- 남의 추천 로그는 안 보여야 한다 (SPEC: 본인 것만).
+set role authenticated;
+set request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+insert into _rls values ('other_logs', (select count(*) from recommendation_logs));
+-- 남의 맛집 수정은 0행이어야 한다 (RLS 는 에러가 아니라 행을 걸러낸다).
+with upd as (
+  update restaurants set memo = '남이 고침' where name = '김밥천국' returning 1
+)
+insert into _rls select 'other_update_rows', count(*) from upd;
+reset role;
+
+do $$
+declare v bigint;
+begin
+  select _rls.v into v from _rls where k = 'anon_restaurants';
+  if v <> 0 then raise exception '세션 없이 restaurants 가 %건 보인다 (0이어야 한다)', v; end if;
+
+  select _rls.v into v from _rls where k = 'anon_profiles';
+  if v <> 0 then raise exception '세션 없이 profiles 가 %건 보인다 (0이어야 한다)', v; end if;
+
+  select _rls.v into v from _rls where k = 'auth_restaurants';
+  if v = 0 then raise exception '세션이 있는데 restaurants 가 0건이다'; end if;
+
+  select _rls.v into v from _rls where k = 'auth_own_logs';
+  if v <> 1 then raise exception '본인 추천 로그가 1건이 아니라 %건이다', v; end if;
+
+  select _rls.v into v from _rls where k = 'other_logs';
+  if v <> 0 then raise exception '남의 추천 로그가 %건 보인다 (0이어야 한다)', v; end if;
+
+  select _rls.v into v from _rls where k = 'other_update_rows';
+  if v <> 0 then raise exception '남의 맛집을 %행 수정했다 (0이어야 한다)', v; end if;
+end
+$$;
+
+-- 남의 id 로 리뷰를 쓰거나 맛집을 등록하면 정책 위반이어야 한다.
+set role authenticated;
+set request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+do $$
+begin
+  begin
+    insert into reviews(restaurant_id, user_id, rating)
+      select id, '11111111-1111-1111-1111-111111111111', 1
+        from restaurants where name = '김밥천국';
+    raise exception '남의 user_id 로 리뷰가 작성됐다';
+  exception when insufficient_privilege then null;
+  end;
+
+  begin
+    insert into restaurants(name, category, location, created_by)
+      values ('사칭집', '한식', st_makepoint(126.99, 37.58)::geography,
+              '11111111-1111-1111-1111-111111111111');
+    raise exception '남의 id 를 created_by 로 맛집이 등록됐다';
+  exception when insufficient_privilege then null;
+  end;
+end
+$$;
+reset role;
+
+-- ── 5. Storage (SPEC §2.3) ───────────────────────────────────────────
+-- ⚠️ shim 의 storage 는 실물과 컬럼이 다른 근사치다. 여기 통과는 정책이
+--    "붙어 있고 경로 판별이 의도대로 동작한다" 까지만 보증한다.
+do $$
+declare n int;
+begin
+  if not exists (select 1 from storage.buckets where id = 'review-photos') then
+    raise exception 'review-photos 버킷이 없다';
+  end if;
+  if (select public from storage.buckets where id = 'review-photos') then
+    raise exception 'review-photos 버킷이 public 이다 (비공개여야 한다)';
+  end if;
+
+  select count(*) into n from pg_policies
+   where schemaname = 'storage' and tablename = 'objects'
+     and policyname like 'review_photos_object_%';
+  if n <> 4 then
+    raise exception 'storage.objects 의 review-photos 정책이 4개가 아니라 %개다', n;
+  end if;
+
+  if (storage.foldername('11111111-1111-1111-1111-111111111111/2026/a.webp'))[1]
+     <> '11111111-1111-1111-1111-111111111111' then
+    raise exception 'foldername 이 경로 첫 조각을 소유자로 뽑지 못한다';
+  end if;
+end
+$$;
+
+set role authenticated;
+set request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+do $$
+begin
+  -- 본인 경로 — 되어야 한다
+  insert into storage.objects(bucket_id, name)
+    values ('review-photos', '11111111-1111-1111-1111-111111111111/a.webp');
+
+  -- 남의 경로 — 막혀야 한다
+  begin
+    insert into storage.objects(bucket_id, name)
+      values ('review-photos', '22222222-2222-2222-2222-222222222222/b.webp');
+    raise exception '남의 경로에 업로드가 됐다';
+  exception when insufficient_privilege then null;
+  end;
+end
+$$;
+reset role;
 
 \echo '✓ 스키마 검증 통과'

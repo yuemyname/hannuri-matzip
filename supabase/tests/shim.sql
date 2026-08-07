@@ -39,8 +39,37 @@ create or replace function auth.role() returns text language sql stable as $$
   select coalesce(nullif(auth.jwt() ->> 'role', ''), 'anon');
 $$;
 
+-- ── Storage ──────────────────────────────────────────────────────────
+-- Supabase Storage 가 만드는 것들. 마이그레이션이 버킷을 만들고 storage.objects 에
+-- 정책을 걸기 때문에 없으면 적용 자체가 안 된다.
+-- ⚠️ 실물과 컬럼이 다르다. 여기서 통과해도 실제 Storage 동작을 보장하지 않는다.
+create schema if not exists storage;
+
+create table if not exists storage.buckets (
+  id     text primary key,
+  name   text not null,
+  public boolean not null default false
+);
+
+create table if not exists storage.objects (
+  id        uuid primary key default gen_random_uuid(),
+  bucket_id text references storage.buckets(id),
+  name      text not null,
+  owner     uuid
+);
+
+-- 'uid/2026/a.webp' → {uid,2026}. 경로 첫 조각으로 소유자를 판별하는 데 쓴다.
+create or replace function storage.foldername(name text) returns text[]
+language sql immutable as $$
+  select (string_to_array(name, '/'))[1:greatest(array_length(string_to_array(name, '/'), 1) - 1, 0)];
+$$;
+
 -- 익명 세션도 authenticated 롤을 받는다 (is_anonymous 클레임으로만 구분된다).
 -- 이후 마이그레이션이 만드는 테이블에 권한이 붙도록 default privileges 로 걸어둔다.
-grant usage on schema public to anon, authenticated;
+grant usage on schema public, storage, auth to anon, authenticated;
+grant execute on function auth.jwt(), auth.uid(), auth.role() to anon, authenticated;
+grant execute on function storage.foldername(text) to anon, authenticated;
+grant select, insert, update, delete on storage.objects to anon, authenticated;
+grant select on storage.buckets to anon, authenticated;
 alter default privileges in schema public
   grant select, insert, update, delete on tables to anon, authenticated;
