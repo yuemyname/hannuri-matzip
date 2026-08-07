@@ -17,8 +17,8 @@ export function naverMapsSdkUrl(clientId: string) {
 
 /** GPS 를 못 쓸 때 기준이 되는 사무실 좌표 (SPEC §1.2, §5). 1.2 에서 실제 위치로 대체된다. */
 export const FALLBACK_CENTER = {
-  lat: Number(process.env.NEXT_PUBLIC_FALLBACK_LAT ?? 37.5665),
-  lng: Number(process.env.NEXT_PUBLIC_FALLBACK_LNG ?? 126.978),
+  lat: Number(process.env.NEXT_PUBLIC_FALLBACK_LAT ?? 37.537247),
+  lng: Number(process.env.NEXT_PUBLIC_FALLBACK_LNG ?? 127.082473),
 };
 
 export const DEFAULT_ZOOM = 16;

@@ -6,16 +6,21 @@
 -- id 를 이름에서 md5 로 만들기 때문에 재실행이 새 행을 만들지 않고 기존 행을 갱신한다.
 -- **사용자가 앱에서 만든 데이터는 건드리지 않는다** — 시드는 자기 id 만 손댄다.
 --
--- ⚠️ 좌표는 아직 가짜다. 사무실 좌표(아래 seed_office)에서 방위각·거리로 찍은
---    합성 데이터라 이름도 실물이 아니다. 실제 15곳으로 바꾸는 방법은 이 파일 맨 아래.
+-- ⚠️ 가게 이름은 아직 실물이 아니다. 기준점(아래 seed_office)에서 방위각·거리로
+--    찍은 합성 데이터다. 실제 15곳으로 바꾸는 방법은 이 파일 맨 아래.
 
 begin;
 
 -- ── 사무실 기준점 ────────────────────────────────────────────────────
 -- 여기 한 줄만 바꾸면 15곳이 통째로 따라 움직인다.
--- .env 의 NEXT_PUBLIC_FALLBACK_LAT/LNG 와 같은 값을 쓴다.
+-- .env 의 NEXT_PUBLIC_FALLBACK_LAT/LNG 와 **같은 값이어야 한다.**
+-- 갈라지면 지도의 반경 원과 조회 결과가 다른 곳을 가리킨다.
+--
+-- 이 값은 사용자가 직접 준 좌표다. 앞서 이야기된 주소(종로구 내자동 219)와는
+-- 약 10km 떨어져 있다 — 내자동은 경도가 126.97 대다. 사무실이 실제로 내자동이면
+-- 이 줄과 .env 두 곳만 고치고 `pnpm seed` 를 다시 돌리면 된다.
 create temp table seed_office on commit drop as
-select 37.5665::double precision as lat, 126.9780::double precision as lng;
+select 37.537247::double precision as lat, 127.082473::double precision as lng;
 
 -- 이름에서 항상 같은 uuid 를 만든다. 멱등성의 근거.
 create or replace function pg_temp.seed_id(kind text, key text)
