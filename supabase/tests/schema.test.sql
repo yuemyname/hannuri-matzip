@@ -524,4 +524,118 @@ begin
 end
 $$;
 
+
+-- ── 8. pick_restaurant (SPEC §3.2) ───────────────────────────────────
+-- 여기 픽스처는 앞 절들과 섞이면 안 된다. 전용 좌표(먼 바다)에 따로 심는다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+begin
+  insert into restaurants(id, name, category, location, price_range, created_by)
+  values
+    ('aaaa0001-0000-0000-0000-000000000001', '픽_고평점', '한식',
+     st_makepoint(128.5, 35.5)::geography, 1, uid),
+    ('aaaa0002-0000-0000-0000-000000000002', '픽_저평점', '중식',
+     st_makepoint(128.5001, 35.5)::geography, 4, uid),
+    ('aaaa0003-0000-0000-0000-000000000003', '픽_신규', '일식',
+     st_makepoint(128.5002, 35.5)::geography, 2, uid);
+
+  -- 고평점 5점 / 저평점 1점 / 신규는 리뷰 없음
+  insert into reviews(restaurant_id, user_id, rating)
+  values ('aaaa0001-0000-0000-0000-000000000001', uid, 5),
+         ('aaaa0002-0000-0000-0000-000000000002', uid, 1);
+end
+$$;
+
+-- 20회 호출: 결과가 분산되고, 평점 높은 곳이 더 자주 나온다 (WBS 4.1 DoD)
+do $$
+declare
+  hit text; n_distinct int := 0;
+  n_high int := 0; n_low int := 0; n_new int := 0; i int;
+begin
+  create temp table _pick_runs(name text) on commit drop;
+  for i in 1..20 loop
+    select p.name into hit
+      from pick_restaurant(35.5, 128.5, 200, 'lunch') p;
+    insert into _pick_runs values (hit);
+  end loop;
+
+  select count(distinct name) into n_distinct from _pick_runs;
+  select count(*) into n_high from _pick_runs where name = '픽_고평점';
+  select count(*) into n_low  from _pick_runs where name = '픽_저평점';
+  select count(*) into n_new  from _pick_runs where name = '픽_신규';
+
+  if n_distinct < 2 then
+    raise exception '20회 호출에 %종만 나왔다 — 결정론적이다', n_distinct;
+  end if;
+  -- weight: 고평점 6^1.5≈14.7 / 신규 1 / 저평점 2^1.5≈2.83.
+  -- 기대값은 고평점 ~79%. 20회에서 저평점보다 적게 나올 확률은 사실상 0 이다.
+  if n_high <= n_low then
+    raise exception '평점 가중이 안 걸린다 (고평점 %회 <= 저평점 %회)', n_high, n_low;
+  end if;
+  raise notice 'pick_restaurant 20회 — 고평점 %, 저평점 %, 신규 % (%종)',
+    n_high, n_low, n_new, n_distinct;
+end
+$$;
+
+-- 직전 결과 제외 (WBS 4.4 DoD: 연속 재추첨에 같은 곳이 다시 나오지 않는다)
+do $$
+declare got uuid;
+begin
+  select p.id into got
+    from pick_restaurant(35.5, 128.5, 200, 'lunch', null, null, 7,
+      array['aaaa0001-0000-0000-0000-000000000001',
+            'aaaa0002-0000-0000-0000-000000000002']::uuid[]) p;
+  if got is distinct from 'aaaa0003-0000-0000-0000-000000000003' then
+    raise exception '제외 목록이 안 먹는다 (기대: 픽_신규, 실제: %)', got;
+  end if;
+
+  -- 전부 제외하면 빈 결과. 여기서 아무거나 돌려주면 [다시 뽑기] 가 같은 곳을 준다.
+  select p.id into got
+    from pick_restaurant(35.5, 128.5, 200, 'lunch', null, null, 7,
+      array['aaaa0001-0000-0000-0000-000000000001',
+            'aaaa0002-0000-0000-0000-000000000002',
+            'aaaa0003-0000-0000-0000-000000000003']::uuid[]) p;
+  if got is not null then
+    raise exception '후보를 전부 제외했는데 %가 나왔다', got;
+  end if;
+end
+$$;
+
+-- 최근 간 곳 제외 → 후보 0건이면 그 조건만 풀고 재시도 (SPEC §3.2 4번)
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111'; got uuid; n int;
+begin
+  -- 세 곳 모두 "어제 다녀왔다" 로 기록
+  insert into recommendation_logs(user_id, restaurant_id, meal_type, accepted, created_at)
+  select uid, r.id, 'lunch', true, now() - interval '1 day'
+    from restaurants r where r.name like '픽\_%';
+
+  -- auth.uid() 가 있어야 제외가 걸린다
+  perform set_config('request.jwt.claims',
+    format('{"sub":"%s","role":"authenticated"}', uid), true);
+
+  -- 앞 절들도 recommendation_logs 를 쓴다. 이 절의 픽스처만 센다.
+  select count(*) into n
+    from recommendation_logs l join restaurants r on r.id = l.restaurant_id
+   where l.user_id = uid and l.accepted and r.name like '픽\_%';
+  if n <> 3 then raise exception '픽스처가 3건이 아니라 %건이다', n; end if;
+
+  select p.id into got from pick_restaurant(35.5, 128.5, 200, 'lunch') p;
+  if got is null then
+    raise exception '전부 최근 방문이면 조건을 풀고라도 하나는 나와야 한다';
+  end if;
+
+  -- 반대로 카테고리를 없는 값으로 주면 폴백이 걸려도 0건이어야 한다.
+  -- (폴백은 "최근 간 곳" 조건만 푼다. 사용자가 고른 조건까지 넓히지 않는다)
+  select p.id into got
+    from pick_restaurant(35.5, 128.5, 200, 'lunch', array['양식']) p;
+  if got is not null then
+    raise exception '카테고리 조건이 폴백에서 풀렸다 (%)', got;
+  end if;
+
+  perform set_config('request.jwt.claims', '', true);
+  raise notice 'pick_restaurant 폴백·제외 확인';
+end
+$$;
+
 \echo '✓ 스키마 검증 통과'

@@ -60,6 +60,25 @@ export function MapPanel({
     request();
   };
 
+  // 마커를 눌러서 고른 건 여기서 왔다는 표시. 그 경우엔 카메라를 안 옮긴다 —
+  // 방금 누른 마커로 지도가 튀면 성가시다.
+  const fromMarker = useRef(false);
+  const handleSelect = (id: string) => {
+    fromMarker.current = true;
+    onSelect(id);
+  };
+
+  // 밖에서 고른 경우(점메추 [여기로 갈게요] 등)에는 그 맛집으로 옮긴다 (WBS 4.4).
+  useEffect(() => {
+    if (fromMarker.current) {
+      fromMarker.current = false;
+      return;
+    }
+    if (!selectedId) return;
+    const hit = restaurants.find((r) => r.id === selectedId);
+    if (hit) setFocus({ lat: hit.lat, lng: hit.lng });
+  }, [selectedId, restaurants]);
+
   return (
     <div className="relative size-full">
       <MapView
@@ -71,7 +90,7 @@ export function MapPanel({
         radius={radius}
         restaurants={restaurants}
         selectedId={selectedId}
-        onSelect={onSelect}
+        onSelect={handleSelect}
         onViewChange={setView}
       />
 

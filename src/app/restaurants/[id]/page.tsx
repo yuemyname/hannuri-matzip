@@ -1,5 +1,5 @@
 import { PageShell } from "@/components/page-shell";
-import { RestaurantDetailView } from "@/features/restaurants/restaurant-detail-view";
+import { RestaurantDetail } from "@/features/restaurants/restaurant-detail";
 
 export const metadata = { title: "맛집 상세" };
 
@@ -11,7 +11,7 @@ export default async function Page({
   const { id } = await params;
   return (
     <PageShell title="맛집 상세">
-      <RestaurantDetailView id={id} />
+      <RestaurantDetail id={id} />
     </PageShell>
   );
 }

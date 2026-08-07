@@ -1,5 +1,5 @@
 import { Modal } from "@/components/modal";
-import { RestaurantDetailView } from "@/features/restaurants/restaurant-detail-view";
+import { RestaurantDetail } from "@/features/restaurants/restaurant-detail";
 
 export default async function Page({
   params,
@@ -9,7 +9,7 @@ export default async function Page({
   const { id } = await params;
   return (
     <Modal title="맛집 상세">
-      <RestaurantDetailView id={id} />
+      <RestaurantDetail id={id} />
     </Modal>
   );
 }
