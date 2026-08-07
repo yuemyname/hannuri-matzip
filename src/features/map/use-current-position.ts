@@ -61,6 +61,16 @@ export function useCurrentPosition() {
   const [status, setStatus] = useState<PositionStatus>("idle");
   const [coords, setCoords] = useState<Coords | null>(null);
   const inFlight = useRef(false);
+  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const settle = useCallback((next: PositionStatus) => {
+    inFlight.current = false;
+    if (watchdog.current) {
+      clearTimeout(watchdog.current);
+      watchdog.current = null;
+    }
+    setStatus(next);
+  }, []);
 
   const request = useCallback(() => {
     if (inFlight.current) return;
@@ -78,26 +88,37 @@ export function useCurrentPosition() {
     inFlight.current = true;
     setStatus("prompting");
 
+    // iOS Safari 는 프롬프트를 띄우지도, 콜백을 부르지도 않고 매달리는 경우가 있다.
+    // 그러면 inFlight 가 true 로 굳어서 이후 탭이 전부 무시된다 — 눌러도 아무 일이
+    // 없어 보이는 상태. OPTIONS.timeout 보다 조금 늦게 강제로 풀어준다.
+    watchdog.current = setTimeout(() => {
+      if (inFlight.current) settle("timeout");
+    }, OPTIONS.timeout! + 2000);
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        inFlight.current = false;
         const next: Coords = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
         };
         setCoords(next);
-        setStatus("granted");
+        settle("granted");
         writeCache(next);
       },
       (err) => {
-        inFlight.current = false;
-        if (err.code === err.PERMISSION_DENIED) setStatus("denied");
-        else if (err.code === err.TIMEOUT) setStatus("timeout");
-        else setStatus("unavailable");
+        if (err.code === err.PERMISSION_DENIED) settle("denied");
+        else if (err.code === err.TIMEOUT) settle("timeout");
+        else settle("unavailable");
       },
       OPTIONS,
     );
+  }, [settle]);
+
+  useEffect(() => {
+    return () => {
+      if (watchdog.current) clearTimeout(watchdog.current);
+    };
   }, []);
 
   useEffect(() => {
