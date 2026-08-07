@@ -13,7 +13,8 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:verify": "bash scripts/verify-schema.sh"
+    "db:verify": "bash scripts/verify-schema.sh",
+    "seed": "bash scripts/seed.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
