@@ -2,12 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
-import {
-  DEFAULT_ZOOM,
-  FALLBACK_CENTER,
-  NAVER_MAP_CLIENT_ID,
-  naverMapsSdkUrl,
-} from "./config";
+import { DEFAULT_ZOOM, NAVER_MAP_CLIENT_ID, naverMapsSdkUrl } from "./config";
 
 type Status = "loading" | "ready" | "no-key" | "load-failed" | "auth-failed";
 
@@ -24,7 +19,11 @@ const MESSAGE: Record<Exclude<Status, "loading" | "ready">, string> = {
  * 지도 인스턴스는 앱 전체에서 하나만 존재한다 (CLAUDE.md, SHELL.md §4).
  * 이 컴포넌트는 메인에서만 마운트하고, 모달 안에서 새로 만들지 않는다.
  */
-export default function NaverMap() {
+export default function NaverMap({
+  center,
+}: {
+  center: { lat: number; lng: number };
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<naver.maps.Map | null>(null);
   const [status, setStatus] = useState<Status>(
@@ -47,6 +46,9 @@ export default function NaverMap() {
     };
   }, []);
 
+  // 최초 생성에만 쓴다. 이후 이동은 아래 effect 가 panTo 로 처리한다.
+  const initialCenter = useRef(center);
+
   const initMap = () => {
     // SSR 에서는 여기까지 오지 않는다 — 이 컴포넌트는 ssr: false 로만 마운트된다.
     if (!containerRef.current || mapRef.current) return;
@@ -56,12 +58,21 @@ export default function NaverMap() {
     }
 
     mapRef.current = new naver.maps.Map(containerRef.current, {
-      center: new naver.maps.LatLng(FALLBACK_CENTER.lat, FALLBACK_CENTER.lng),
+      center: new naver.maps.LatLng(
+        initialCenter.current.lat,
+        initialCenter.current.lng,
+      ),
       zoom: DEFAULT_ZOOM,
       // 반경 Circle·현재위치 마커는 1.3, 맛집 마커는 2.3 에서 올린다.
     });
     setStatus("ready");
   };
+
+  // 위치를 얻으면 지도를 옮긴다. 재생성이 아니라 이동이다 — 인스턴스는 하나로 유지한다.
+  useEffect(() => {
+    if (status !== "ready" || !mapRef.current) return;
+    mapRef.current.panTo(new naver.maps.LatLng(center.lat, center.lng));
+  }, [status, center.lat, center.lng]);
 
   return (
     <div className="relative size-full">

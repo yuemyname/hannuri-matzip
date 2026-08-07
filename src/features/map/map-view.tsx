@@ -18,6 +18,6 @@ const NaverMap = dynamic(() => import("./naver-map"), {
   ),
 });
 
-export function MapView() {
-  return <NaverMap />;
+export function MapView({ center }: { center: { lat: number; lng: number } }) {
+  return <NaverMap center={center} />;
 }

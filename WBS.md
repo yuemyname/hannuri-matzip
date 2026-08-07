@@ -131,11 +131,13 @@
   - 작업 환경에서는 `oapi.map.naver.com` 이 차단돼 에러 경로만 검증했었다
     (키 없음 / 로드 실패). 콘솔 에러 0건은 실기기에서 미확인.
 
-### [ ] 1.2 Geolocation 훅
+### [x] 1.2 Geolocation 훅
 - `useCurrentPosition()` — `SPEC.md §5` 상태 머신 구현
 - denied/timeout 시 폴백 좌표 + 배너
 - "내 주변 찾기" 버튼 트리거 경로
 - **DoD**: 브라우저 위치 권한 허용/거부 두 시나리오 모두 정상 동작
+- ⚠️ Chromium 으로 허용·거부·저정확도·캐시 4가지를 검증했다.
+  `timeout` 분기와 지도 `panTo` 는 미검증 — 실기기에서 확인 필요.
 
 ### [ ] 1.3 반경 Circle + 현재위치 마커
 - `naver.maps.Circle` 반경 표시, 반경 변경 시 반지름 갱신
