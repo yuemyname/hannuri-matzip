@@ -244,6 +244,79 @@ end
 $$;
 reset role;
 
+-- ── 4b. 쓰기 정책 (SPEC §2.3 표) ─────────────────────────────────────
+-- 본인 것: 되어야 한다 / 남의 것: 막혀야 한다.
+set role authenticated;
+set request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+do $$
+declare rid uuid; rvid uuid; n int;
+begin
+  select id into rid from restaurants where name = '김밥천국';
+  select id into rvid from reviews
+   where user_id = '11111111-1111-1111-1111-111111111111' limit 1;
+
+  -- profiles: 본인 닉네임 변경
+  update profiles set display_name = '바꾼이름'
+   where id = '11111111-1111-1111-1111-111111111111';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception '본인 닉네임을 못 바꿨다 (%행)', n; end if;
+
+  -- menus: 세션만 있으면 누구나 (SPEC §2.3)
+  insert into menus(restaurant_id, name, price, is_signature)
+    values (rid, '참치김밥', 4000, true);
+
+  -- review_photos: 본인 리뷰에 붙이기
+  insert into review_photos(review_id, storage_path)
+    values (rvid, '11111111-1111-1111-1111-111111111111/a.webp');
+
+  -- recommendation_logs: 본인 로그 수락 처리
+  update recommendation_logs set accepted = true
+   where user_id = '11111111-1111-1111-1111-111111111111';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception '본인 추천 로그를 못 고쳤다 (%행)', n; end if;
+end
+$$;
+reset role;
+
+set role authenticated;
+set request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}';
+do $$
+declare rvid uuid; n int;
+begin
+  -- 남의 닉네임은 못 바꾼다 (RLS 는 행을 걸러내므로 0행)
+  update profiles set display_name = '남이바꿈'
+   where id = '11111111-1111-1111-1111-111111111111';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception '남의 닉네임을 %행 바꿨다', n; end if;
+
+  -- 남의 추천 로그도 못 고친다
+  update recommendation_logs set accepted = false;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception '남의 추천 로그를 %행 고쳤다', n; end if;
+
+  -- 남의 리뷰에 사진을 못 붙인다
+  select id into rvid from reviews
+   where user_id = '11111111-1111-1111-1111-111111111111' limit 1;
+  begin
+    insert into review_photos(review_id, storage_path)
+      values (rvid, '22222222-2222-2222-2222-222222222222/x.webp');
+    raise exception '남의 리뷰에 사진이 붙었다';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- 남의 리뷰 사진도 못 지운다
+  delete from review_photos;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception '남의 리뷰 사진을 %행 지웠다', n; end if;
+
+  -- 메뉴는 남이 만든 것도 고칠 수 있다 (의도된 동작, SPEC §2.3 / §8)
+  update menus set price = 4500;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception '메뉴를 누구나 고칠 수 있어야 하는데 %행이다', n; end if;
+end
+$$;
+reset role;
+
 -- ── 5. Storage (SPEC §2.3) ───────────────────────────────────────────
 -- ⚠️ shim 의 storage 는 실물과 컬럼이 다른 근사치다. 여기 통과는 정책이
 --    "붙어 있고 경로 판별이 의도대로 동작한다" 까지만 보증한다.

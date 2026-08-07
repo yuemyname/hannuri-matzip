@@ -163,10 +163,31 @@ group by r.id;
 - 전 테이블 `enable row level security`.
 - `select`: `auth.role() = 'authenticated'` — 세션이 있으면 전부 조회 가능.
   익명 세션도 `authenticated` 롤을 받는다 (§2.4). 세션 없이 anon 키만 있으면 거부된다.
-- `restaurants insert`: authenticated. `update/delete`: `created_by = auth.uid()`.
-- `reviews insert/update/delete`: `user_id = auth.uid()`.
-- `recommendation_logs`: 본인 것만 select/insert.
+  단 `recommendation_logs` 는 본인 것만 보인다.
+
+쓰기는 아래가 전부다. **표에 없는 동작은 정책이 없으므로 거부된다.**
+
+| 테이블 | insert | update | delete |
+|---|---|---|---|
+| `profiles` | 정책 없음 — §2.4 트리거가 만든다 | `id = auth.uid()` | 정책 없음 — `auth.users` 삭제 시 cascade |
+| `restaurants` | authenticated **+ `created_by = auth.uid()`** | `created_by = auth.uid()` | `created_by = auth.uid()` |
+| `menus` | authenticated | authenticated | authenticated |
+| `reviews` | `user_id = auth.uid()` | `user_id = auth.uid()` | `user_id = auth.uid()` |
+| `review_photos` | 상위 리뷰가 본인 것 | 상위 리뷰가 본인 것 | 상위 리뷰가 본인 것 |
+| `recommendation_logs` | `user_id = auth.uid()` | `user_id = auth.uid()` | 정책 없음 |
+
+- **`restaurants insert` 에 `created_by` 를 묶는 이유**: 안 묶으면 남의 id 로 등록할 수
+  있고, 그러면 update/delete 의 `created_by` 검사가 통째로 무의미해진다.
+- **`menus` 는 등록자로 묶지 않는다.** 테이블에 `created_by` 가 없고, 메뉴는 "가보니
+  이게 있더라" 로 채워지는 공유 정보다. 맛집 등록자만 고칠 수 있으면 메뉴가 거의
+  안 채워진다. 맛집 본체(이름·좌표)는 정체성이라 등록자로 묶고, 메뉴는 푼다.
+  대신 훼손 리스크를 §8 에 남긴다.
+- **`review_photos` 는 상위 리뷰의 소유자로 판단한다.**
+  `exists (select 1 from reviews rv where rv.id = review_id and rv.user_id = auth.uid())`
+- **`recommendation_logs` 에 update 가 필요한 이유**: 뽑는 시점에 `accepted = null` 로
+  insert 하고, 사용자가 [여기로] / [다시] 를 누르면 그 행을 update 한다 (§4.2).
 - Storage 버킷 `review-photos`: 인증 사용자 읽기, 본인 경로(`{uid}/...`)만 쓰기.
+  비공개 버킷이므로 읽기는 서명 URL 로 내려간다.
 
 ### 2.4 익명 세션
 
@@ -301,8 +322,9 @@ create or replace function pick_restaurant(
 - 필터: 카테고리(다중), 최대 가격대, 반경, "최근 일주일 간 곳 제외" 스위치
 - **[뽑기]** → 서버 응답 먼저 수신 → 슬롯머신/카드 셔플 애니메이션 1.2s → 결과 카드
 - 결과 카드: 맛집명, 대표메뉴, 거리, 평점, [여기로 갈게요] / [다시 뽑기]
-  - [여기로] → `recommendation_logs.accepted = true`
-  - [다시] → 직전 결과 `accepted = false`, 같은 세션 내 재추첨에서 해당 맛집 제외
+  - 뽑힌 시점에 `recommendation_logs` 에 `accepted = null` 로 행을 남긴다
+  - [여기로] → 그 행을 `accepted = true` 로 update
+  - [다시] → 직전 결과를 `accepted = false` 로 update, 같은 세션 내 재추첨에서 해당 맛집 제외
 - 후보 0건일 때: "반경을 넓히거나 필터를 풀어보세요" + [반경 1.5km로 넓히기] 버튼
 - 접근성: 애니메이션은 `prefers-reduced-motion` 존중, 해당 시 즉시 결과 표시
 
@@ -393,4 +415,5 @@ navigator.geolocation.getCurrentPosition(ok, err, {
 | 세션 소실 | 저장소를 비우거나 기기를 바꾸면 내 리뷰·등록 기록이 끊김 | `/me`에 고지. 계정 연결(익명→이메일 승격)은 v2 논의 |
 | 접근 제한 없음 | 사내 전용 전제를 포기해 URL을 아는 외부인도 등록·리뷰 가능 | v1은 감수. 좁혀야 하면 사내망·VPN 등 앱 밖에서 처리 |
 | 어뷰징 | 익명이라 스팸 등록·평점 조작 비용이 낮음 | Anonymous Sign-in rate limit. 신고·차단은 v2 논의 |
+| 메뉴 훼손 | `menus` 쓰기를 등록자로 안 묶어 누구나 지울 수 있음 | v1은 감수 — 안 묶어야 메뉴가 채워진다. 문제가 생기면 `created_by` 추가 후 조이기 |
 | 네이버 리뷰 크롤링 | 약관 위반 | 하지 않음. 자체 리뷰만 |
