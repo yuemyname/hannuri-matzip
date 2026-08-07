@@ -63,7 +63,7 @@
   - 시크릿 모드로 열면 다른 `user_id`가 발급된다
   - `profiles`에 닉네임이 자동 생성되어 있다
 
-### [~] 0.5 디자인 토큰 + 기본 컴포넌트
+### [x] 0.5 디자인 토큰 + 기본 컴포넌트
 > P1부터 화면을 만들기 시작하므로, **그 전에** 색·타입·간격을 고정한다.
 > 건너뛰면 화면마다 색이 미묘하게 달라지고 나중에 전부 되돌려야 한다.
 
@@ -83,14 +83,16 @@
   - `rg -n '#[0-9a-fA-F]{6}' src --glob '!**/globals.css'` → **0건**
   - 360px 폭에서 `/design` 레이아웃 안 깨짐
   - Tab만으로 CategoryChip 토글 가능, 포커스 링 육안 확인
-- ⚠️ **shadcn/ui 초기화만 남았다.** 작업 환경에서 `ui.shadcn.com` 이 차단되어
-  `shadcn init` / `add` 가 레지스트리를 못 받는다. 로컬에서 아래를 돌리고 커밋하면 끝난다.
-  ```
-  pnpm dlx shadcn@latest init
-  pnpm dlx shadcn@latest add button input dialog sheet badge skeleton dropdown-menu switch toast alert-dialog
-  ```
-  토큰·3종 컴포넌트·`/design` 과 DoD 4개는 전부 끝났다. 0.6 이 Dialog/Sheet 를 쓰므로
-  그 전에는 반드시 필요하다.
+- ⚠️ **shadcn CLI 는 쓰지 않는다.** 맥에서 실제로 돌려보고 내린 결론이다.
+  - 지금 CLI 는 프리미티브를 고르게 하는데 기본값이 **Base UI** 다. 그걸 받으면
+    Radix(0.6 의 `<Modal>`)와 프리미티브가 두 개가 된다. SHELL.md §3 과도 어긋난다.
+  - `Radix UI` + `Custom` 을 골라도 CLI 가 설치하지 않고 웹 프리셋 빌더로 넘긴다.
+    거기서 나오는 명령은 프리셋 색·폰트를 들고 와서 `globals.css` 토큰을 덮어쓴다.
+  - 그래서 Radix 프리미티브만 npm 으로 받고 컴포넌트는 우리 토큰으로 직접 썼다.
+    `src/components/ui/` 에 button / input / badge / skeleton / switch /
+    dropdown-menu / alert-dialog. 프리미티브는 Radix 하나로 유지된다.
+  - `toast` 는 뺐다. 최신 shadcn 에서 `sonner`(새 의존성)로 대체됐고 아직 쓰는 데가 없다.
+    필요해지는 태스크에서 판단한다.
 
 ### [~] 0.6 셸 + 모달 인프라
 > `SHELL.md` 전체가 이 태스크의 스펙이다. 여기가 어긋나면 P3~P5를 전부 다시 짠다.

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
 import { ChipDemo } from "./chip-demo";
+import { UiDemo } from "./ui-demo";
 
 // 개발 전용 화면. 배포돼도 색인되지 않게 막는다.
 export const metadata: Metadata = {
@@ -39,6 +40,7 @@ const INK = [
 const STATUS = [
   ["bg-star", "--color-star · 별점"],
   ["bg-star-empty", "--color-star-empty"],
+  ["bg-my-location", "--color-my-location · 현재 위치"],
   ["bg-success", "--color-success"],
   ["bg-warning", "--color-warning"],
   ["bg-danger", "--color-danger"],
@@ -197,6 +199,13 @@ export default function DesignPage() {
             </li>
           ))}
         </ul>
+      </Section>
+
+      <Section
+        title="기본 컴포넌트"
+        note="Radix 위에 우리 토큰으로 올렸다. shadcn CLI 는 쓰지 않는다 (WBS 0.5 메모)"
+      >
+        <UiDemo />
       </Section>
 
       <Section
