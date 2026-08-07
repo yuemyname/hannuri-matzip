@@ -56,7 +56,17 @@ function Notice({
   if (isFallback) {
     return (
       <Bubble>
-        <span>현재 위치를 사용할 수 없어 사무실 기준으로 표시 중</span>
+        <span className="flex flex-col">
+          <span>현재 위치를 사용할 수 없어 사무실 기준으로 표시 중</span>
+          {/* 브라우저가 프롬프트조차 안 띄우고 거절하는 경우가 있다.
+              iOS 는 설정 › 개인정보 보호 › 위치 서비스 › Safari 웹사이트가 꺼져 있거나,
+              이 사이트를 한 번 거부해두면 그렇게 된다. 다음 행동을 알려준다. */}
+          {status === "denied" && (
+            <span className="text-caption text-muted-foreground">
+              브라우저 설정에서 이 사이트의 위치 권한을 허용해 주세요
+            </span>
+          )}
+        </span>
         <Action onClick={onRequest}>다시 시도</Action>
       </Bubble>
     );

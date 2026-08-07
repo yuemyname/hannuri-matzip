@@ -109,14 +109,20 @@ export function useCurrentPosition() {
     }
 
     // 이미 허용된 브라우저면 프롬프트 없이 바로 받아온다.
-    // Permissions API 는 지원이 고르지 않으므로 실패하면 그냥 idle 로 둔다.
+    // Permissions API 는 지원이 고르지 않다. Safari 는 'geolocation' 이름을 모르면
+    // 프로미스를 거부하는 대신 그 자리에서 던지기도 해서, try 로도 감싼다.
+    // 여기서 새면 훅 전체가 죽어 "내 주변 찾기" 버튼조차 안 그려진다.
     let cancelled = false;
-    navigator.permissions
-      ?.query({ name: "geolocation" })
-      .then((p) => {
-        if (!cancelled && p.state === "granted") request();
-      })
-      .catch(() => {});
+    try {
+      navigator.permissions
+        ?.query({ name: "geolocation" })
+        .then((p) => {
+          if (!cancelled && p.state === "granted") request();
+        })
+        .catch(() => {});
+    } catch {
+      // 지원 안 하는 브라우저. idle 로 두고 버튼을 기다린다.
+    }
     return () => {
       cancelled = true;
     };
