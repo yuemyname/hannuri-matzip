@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
-import { DEFAULT_ZOOM, NAVER_MAP_CLIENT_ID, naverMapsSdkUrl } from "./config";
+import {
+  DEFAULT_ZOOM,
+  NAVER_MAP_CLIENT_ID,
+  naverMapsSdkUrl,
+  readToken,
+  readTokenNumber,
+} from "./config";
+import type { Coords } from "./use-current-position";
 
 type Status = "loading" | "ready" | "no-key" | "load-failed" | "auth-failed";
 
@@ -21,11 +28,20 @@ const MESSAGE: Record<Exclude<Status, "loading" | "ready">, string> = {
  */
 export default function NaverMap({
   center,
+  me,
+  radius,
 }: {
   center: { lat: number; lng: number };
+  /** 실제 위치. 못 얻었으면 null — 이때는 내 위치 마커를 그리지 않는다 */
+  me: Coords | null;
+  /** 반경(m). Circle 반지름이자 fitBounds 기준 */
+  radius: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<naver.maps.Map | null>(null);
+  const meMarkerRef = useRef<naver.maps.Marker | null>(null);
+  const accuracyRef = useRef<naver.maps.Circle | null>(null);
+  const radiusRef = useRef<naver.maps.Circle | null>(null);
   const [status, setStatus] = useState<Status>(
     NAVER_MAP_CLIENT_ID ? "loading" : "no-key",
   );
@@ -41,6 +57,9 @@ export default function NaverMap({
 
   useEffect(() => {
     return () => {
+      meMarkerRef.current?.setMap(null);
+      accuracyRef.current?.setMap(null);
+      radiusRef.current?.setMap(null);
       mapRef.current?.destroy();
       mapRef.current = null;
     };
@@ -68,11 +87,92 @@ export default function NaverMap({
     setStatus("ready");
   };
 
+  // 반경 Circle 은 지도 준비 후 한 번만 만든다. 이후엔 중심·반지름만 갱신한다.
+  const ensureRadiusCircle = (map: naver.maps.Map) => {
+    if (radiusRef.current) return radiusRef.current;
+    const stroke = readToken("--color-brand-500");
+    radiusRef.current = new naver.maps.Circle({
+      map,
+      center: new naver.maps.LatLng(center.lat, center.lng),
+      radius,
+      // 토큰을 못 읽으면 색 옵션을 빼고 SDK 기본값에 맡긴다
+      ...(stroke ? { strokeColor: stroke, fillColor: stroke } : {}),
+      strokeWeight: 1,
+      strokeOpacity: readTokenNumber("--map-circle-stroke-opacity", 0.4),
+      fillOpacity: readTokenNumber("--map-circle-fill-opacity", 0.06),
+    });
+    return radiusRef.current;
+  };
+
   // 위치를 얻으면 지도를 옮긴다. 재생성이 아니라 이동이다 — 인스턴스는 하나로 유지한다.
   useEffect(() => {
-    if (status !== "ready" || !mapRef.current) return;
-    mapRef.current.panTo(new naver.maps.LatLng(center.lat, center.lng));
+    const map = mapRef.current;
+    if (status !== "ready" || !map) return;
+    const at = new naver.maps.LatLng(center.lat, center.lng);
+    ensureRadiusCircle(map).setCenter(at);
+    map.panTo(at);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, center.lat, center.lng]);
+
+  // 반경이 바뀌면 반지름과 줌이 함께 움직인다 (WBS 1.3 DoD).
+  // 카메라를 건드리므로 반경 변경에만 반응한다 — center 까지 넣으면 이동할 때마다 줌이 튄다.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== "ready" || !map) return;
+    const circle = ensureRadiusCircle(map);
+    circle.setRadius(radius);
+    map.fitBounds(circle.getBounds());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, radius]);
+
+  // 내 위치: 파란 점 + accuracy 원 (SPEC §4.1).
+  // 삭제 후 재생성이 아니라 위치·반지름만 갱신한다 — 깜빡이지 않게 (CLAUDE.md).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== "ready" || !map) return;
+
+    if (!me) {
+      meMarkerRef.current?.setMap(null);
+      accuracyRef.current?.setMap(null);
+      return;
+    }
+
+    const at = new naver.maps.LatLng(me.lat, me.lng);
+
+    if (!accuracyRef.current) {
+      const blue = readToken("--color-my-location");
+      accuracyRef.current = new naver.maps.Circle({
+        map,
+        center: at,
+        radius: me.accuracy,
+        strokeWeight: 0,
+        ...(blue ? { fillColor: blue } : {}),
+        fillOpacity: 0.12,
+      });
+    } else {
+      accuracyRef.current.setMap(map);
+      accuracyRef.current.setCenter(at);
+      accuracyRef.current.setRadius(me.accuracy);
+    }
+
+    if (!meMarkerRef.current) {
+      meMarkerRef.current = new naver.maps.Marker({
+        map,
+        position: at,
+        title: "내 위치",
+        icon: {
+          // 클래스 문자열이라 Tailwind 가 그대로 읽는다. hex 를 박지 않아도 된다.
+          content:
+            '<div class="size-3.5 rounded-chip border-2 border-white bg-my-location shadow-marker"></div>',
+          anchor: new naver.maps.Point(7, 7),
+        },
+        zIndex: 100,
+      });
+    } else {
+      meMarkerRef.current.setMap(map);
+      meMarkerRef.current.setPosition(at);
+    }
+  }, [status, me]);
 
   return (
     <div className="relative size-full">

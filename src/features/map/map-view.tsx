@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { Coords } from "./use-current-position";
 
 /**
  * 지도는 SSR 하지 않는다 — 서버에서 window.naver 에 닿으면 안 된다 (SPEC §1.1).
@@ -18,6 +19,14 @@ const NaverMap = dynamic(() => import("./naver-map"), {
   ),
 });
 
-export function MapView({ center }: { center: { lat: number; lng: number } }) {
-  return <NaverMap center={center} />;
+export function MapView({
+  center,
+  me,
+  radius,
+}: {
+  center: { lat: number; lng: number };
+  me: Coords | null;
+  radius: number;
+}) {
+  return <NaverMap center={center} me={me} radius={radius} />;
 }

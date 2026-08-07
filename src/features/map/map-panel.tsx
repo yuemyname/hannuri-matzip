@@ -1,19 +1,23 @@
 "use client";
 
+import { useState } from "react";
 import { MapView } from "./map-view";
 import { useCurrentPosition } from "./use-current-position";
+import { DEFAULT_RADIUS, RADIUS_OPTIONS } from "./config";
 
 /**
  * 지도 + 위치 상태 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
  * 반경 Circle 과 현재위치 마커는 1.3, 뷰 상태 복원은 1.4 에서 붙는다.
  */
 export function MapPanel() {
-  const { status, center, isFallback, lowAccuracy, request } =
+  const { status, coords, center, isFallback, lowAccuracy, request } =
     useCurrentPosition();
+  // 2.4 에서 필터바로, 1.4 에서 zustand 로 옮겨간다. 지금은 여기 둔다.
+  const [radius, setRadius] = useState<number>(DEFAULT_RADIUS);
 
   return (
     <div className="relative size-full">
-      <MapView center={center} />
+      <MapView center={center} me={coords} radius={radius} />
 
       {/* 배너는 지도 위에 겹친다. 지도 조작을 막지 않도록 바깥은 클릭을 통과시킨다 */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-3">
@@ -23,6 +27,30 @@ export function MapPanel() {
           lowAccuracy={lowAccuracy}
           onRequest={request}
         />
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3">
+        <div
+          role="group"
+          aria-label="반경"
+          className="pointer-events-auto flex gap-1 rounded-chip border border-border bg-background p-1 shadow-pop"
+        >
+          {RADIUS_OPTIONS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={radius === m}
+              onClick={() => setRadius(m)}
+              className={`tnum rounded-chip px-3 py-1 text-label ${
+                radius === m
+                  ? "bg-primary text-primary-foreground"
+                  : "text-foreground hover:bg-muted"
+              }`}
+            >
+              {m < 1000 ? `${m}m` : `${m / 1000}km`}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

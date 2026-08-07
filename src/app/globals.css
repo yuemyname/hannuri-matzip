@@ -39,6 +39,9 @@
   --color-star: #F0A020;
   --color-star-empty: #E4E0DD;
 
+  /* 현재 위치 — 브랜드(주황)·카테고리와 겹치지 않는 파랑 (SPEC §4.1 "현재위치 파란 점") */
+  --color-my-location: #1A73E8;
+
   /* Semantic */
   --color-success: #1E8E5A;
   --color-warning: #B4700F;
