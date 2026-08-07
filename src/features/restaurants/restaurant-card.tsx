@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
 import { PRICE_LABEL } from "./sort";
+import type { SelectSource } from "./select-source";
 import type { NearbyRestaurant } from "./api";
 
 /**
@@ -20,15 +21,16 @@ export function RestaurantCard({
 }: {
   restaurant: NearbyRestaurant;
   selected?: boolean;
-  onSelect?: (id: string) => void;
+  onSelect?: (id: string, source: SelectSource) => void;
 }) {
   const price = r.priceRange === null ? null : PRICE_LABEL[r.priceRange];
 
   return (
     <Link
       href={`/restaurants/${r.id}`}
-      onFocus={() => onSelect?.(r.id)}
-      onPointerEnter={() => onSelect?.(r.id)}
+      // hover/focus 로 지도의 마커만 강조한다. 지도는 안 옮긴다 (WBS 2.5)
+      onFocus={() => onSelect?.(r.id, "list")}
+      onPointerEnter={() => onSelect?.(r.id, "list")}
       // 선택을 색으로만 알리지 않는다. 테두리 굵기도 함께 바뀐다.
       className={`flex flex-col gap-1.5 rounded-lg border bg-background p-3 transition-colors ${
         selected

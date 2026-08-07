@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button, buttonClass } from "@/components/ui/button";
 import { RestaurantCard } from "./restaurant-card";
+import type { SelectSource } from "./select-source";
 import type { NearbyRestaurant } from "./api";
 
 /**
@@ -18,6 +20,7 @@ export function RestaurantList({
   hasFilters,
   onClearFilters,
   selectedId,
+  scrollIntoView,
   onSelect,
 }: {
   restaurants: NearbyRestaurant[];
@@ -28,8 +31,22 @@ export function RestaurantList({
   hasFilters: boolean;
   onClearFilters: () => void;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  /** 지도에서 고른 경우에만 true. 리스트 안에서 고른 걸 스크롤하면 보던 자리가 튄다 */
+  scrollIntoView: boolean;
+  onSelect: (id: string, source: SelectSource) => void;
 }) {
+  const items = useRef(new Map<string, HTMLLIElement>());
+
+  useEffect(() => {
+    if (!scrollIntoView || !selectedId) return;
+    // block:"nearest" — 이미 보이면 안 움직인다. 화면 가운데로 끌어오면
+    // 마커를 누를 때마다 리스트가 크게 뛴다 (2.5 DoD "스크롤이 튀지 않음").
+    items.current.get(selectedId)?.scrollIntoView({
+      block: "nearest",
+      behavior: "smooth",
+    });
+  }, [scrollIntoView, selectedId]);
+
   if (isError) {
     return (
       <Empty
@@ -87,7 +104,13 @@ export function RestaurantList({
   return (
     <ul className="flex flex-col gap-2 p-3">
       {restaurants.map((r) => (
-        <li key={r.id}>
+        <li
+          key={r.id}
+          ref={(el) => {
+            if (el) items.current.set(r.id, el);
+            else items.current.delete(r.id);
+          }}
+        >
           <RestaurantCard
             restaurant={r}
             selected={r.id === selectedId}

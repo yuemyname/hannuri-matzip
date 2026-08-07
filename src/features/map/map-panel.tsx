@@ -5,6 +5,7 @@ import { MapView } from "./map-view";
 import type { useCurrentPosition } from "./use-current-position";
 import { useMapView, type LatLng } from "./map-store";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
+import type { SelectSource } from "@/features/restaurants/select-source";
 
 /**
  * 지도 + 위치 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
@@ -17,12 +18,15 @@ export function MapPanel({
   position,
   restaurants,
   selectedId,
+  selectionSource,
   onSelect,
 }: {
   position: ReturnType<typeof useCurrentPosition>;
   restaurants: NearbyRestaurant[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  /** 선택이 어디서 왔는지. null 이면 앱 밖(점메추 등)에서 온 것이다 */
+  selectionSource: SelectSource | null;
+  onSelect: (id: string, source: SelectSource) => void;
 }) {
   const {
     status,
@@ -60,24 +64,16 @@ export function MapPanel({
     request();
   };
 
-  // 마커를 눌러서 고른 건 여기서 왔다는 표시. 그 경우엔 카메라를 안 옮긴다 —
-  // 방금 누른 마커로 지도가 튀면 성가시다.
-  const fromMarker = useRef(false);
-  const handleSelect = (id: string) => {
-    fromMarker.current = true;
-    onSelect(id);
-  };
+  const handleSelect = (id: string) => onSelect(id, "map");
 
-  // 밖에서 고른 경우(점메추 [여기로 갈게요] 등)에는 그 맛집으로 옮긴다 (WBS 4.4).
+  // 카메라는 **앱 밖에서 고른 경우에만** 옮긴다 (점메추 [여기로 갈게요], WBS 4.4).
+  // 마커를 눌렀을 때 옮기면 방금 누른 것으로 지도가 튀고,
+  // 리스트 카드를 훑을 때 옮기면 마우스만 지나가도 지도가 계속 움직인다 (WBS 2.5).
   useEffect(() => {
-    if (fromMarker.current) {
-      fromMarker.current = false;
-      return;
-    }
-    if (!selectedId) return;
+    if (selectionSource !== null || !selectedId) return;
     const hit = restaurants.find((r) => r.id === selectedId);
     if (hit) setFocus({ lat: hit.lat, lng: hit.lng });
-  }, [selectedId, restaurants]);
+  }, [selectedId, selectionSource, restaurants]);
 
   return (
     <div className="relative size-full">

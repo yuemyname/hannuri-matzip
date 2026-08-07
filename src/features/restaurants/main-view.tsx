@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { MapPanel } from "@/features/map/map-panel";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView } from "@/features/map/map-store";
@@ -8,6 +8,7 @@ import type { Category } from "@/lib/categories";
 import { useNearby } from "./use-nearby";
 import { sortRestaurants, DEFAULT_SORT, type SortKey } from "./sort";
 import { FilterBar } from "./filter-bar";
+import type { SelectSource } from "./select-source";
 import { RestaurantList } from "./restaurant-list";
 
 /**
@@ -69,6 +70,24 @@ export function MainView() {
   const setRadius = useMapView((s) => s.setRadius);
   const setSelectedId = useMapView((s) => s.setSelectedId);
 
+  // 어디서 고른 건지 (WBS 2.5). 출처에 따라 반응이 달라야 한다:
+  //   map  → 리스트를 그 카드로 스크롤한다
+  //   list → 마커만 강조한다. 스크롤도 지도 이동도 하지 않는다 (내가 보던 자리가 튄다)
+  //   null → 밖에서 온 것(점메추 [여기로 갈게요]). 지도를 그리로 옮긴다
+  const lastPick = useRef<{ id: string; source: SelectSource } | null>(null);
+  const source =
+    selectedId && lastPick.current?.id === selectedId
+      ? lastPick.current.source
+      : null;
+
+  const handleSelect = useCallback(
+    (id: string, from: SelectSource) => {
+      lastPick.current = { id, source: from };
+      setSelectedId(id);
+    },
+    [setSelectedId],
+  );
+
   const [sort, setSort] = useState<SortKey>(DEFAULT_SORT);
   const [categories, setCategories] = useState<Category[]>([]);
   // 모바일 드래그 시트. 접힘(지도 40dvh) / 펼침(지도 16dvh) 두 단만 둔다.
@@ -103,7 +122,8 @@ export function MainView() {
           position={position}
           restaurants={restaurants}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          selectionSource={source}
+          onSelect={handleSelect}
         />
       </div>
 
@@ -147,7 +167,10 @@ export function MainView() {
             hasFilters={categories.length > 0}
             onClearFilters={clearCategories}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            // 지도에서 고른 것만 스크롤한다. 카드를 훑을 때마다 리스트가 움직이면
+            // 보던 자리가 튄다 (2.5 DoD "스크롤이 튀지 않음").
+            scrollIntoView={source === "map"}
+            onSelect={handleSelect}
           />
         </div>
       </section>

@@ -99,12 +99,22 @@
   /* ---- Motion ---- */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --animate-shuffle: shuffle 1.2s var(--ease-out-soft); /* /pick 추첨 연출 */
+  --animate-marker-pop: marker-pop 0.36s var(--ease-out-soft); /* 2.5 마커 강조 */
 }
 
 @keyframes shuffle {
   0%   { transform: translateY(0) scale(1);      opacity: 1; }
   40%  { transform: translateY(-8px) scale(0.97); opacity: 0.6; }
   100% { transform: translateY(0) scale(1);      opacity: 1; }
+}
+
+/* 리스트에서 짚은 맛집이 지도 어디인지 눈으로 찾게 해주는 한 번짜리 튕김.
+   반복하지 않는다 — 지도 위에서 계속 움직이는 요소는 읽기를 방해한다.
+   prefers-reduced-motion 이면 위 미디어쿼리가 0.01ms 로 줄여 사실상 사라진다. */
+@keyframes marker-pop {
+  0%   { transform: translateY(0)    scale(1); }
+  45%  { transform: translateY(-6px) scale(1.12); }
+  100% { transform: translateY(0)    scale(1); }
 }
 
 /* ------------------------------------------------------------

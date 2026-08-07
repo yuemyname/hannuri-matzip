@@ -22,8 +22,13 @@ export default function RootLayout({
   return (
     <html lang="ko">
       {/* 세로 flex 로 잡아서 메인이 헤더를 뺀 나머지를 정확히 차지하게 한다.
-          높이 단위는 dvh 다. 뷰포트 높이 단위는 iOS 주소창 때문에 금지 (SHELL.md §2) */}
-      <body className="flex min-h-dvh flex-col">
+          높이 단위는 dvh 다. 뷰포트 높이 단위는 iOS 주소창 때문에 금지 (SHELL.md §2)
+
+          **min-h 가 아니라 h 다.** min-h 면 body 높이가 내용에 따라 늘어나서
+          메인의 리스트가 자기 안에서 스크롤하지 못하고 문서 전체를 밀어낸다
+          (지도가 위로 밀려 올라간다). 풀페이지 fallback 은 PageShell 이
+          min-h-dvh 로 잡고 있어서 길어지면 그대로 문서가 스크롤된다. */}
+      <body className="flex h-dvh flex-col">
         <Providers>
           {/* 헤더는 셸의 일부다. 모달이 떠도 언마운트되지 않는다 (SHELL.md §0) */}
           <header className="z-[var(--z-header)] flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">

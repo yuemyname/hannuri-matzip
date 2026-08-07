@@ -10,7 +10,9 @@ const BASE =
   "flex h-6 w-12 items-center justify-center gap-0.5 rounded-chip border text-caption font-medium shadow-marker";
 
 const NORMAL = `${BASE} border-border bg-background text-foreground`;
-const SELECTED = `${BASE} border-transparent bg-primary text-primary-foreground`;
+// 색만 바꾸면 지도 위에서 못 찾는다. 크기와 한 번짜리 튕김을 함께 준다 (WBS 2.5).
+// 반복 애니메이션은 쓰지 않는다 — 계속 움직이면 나머지를 읽기 어렵다.
+const SELECTED = `${BASE} scale-110 border-transparent bg-primary text-primary-foreground animate-marker-pop`;
 
 /** 마커 한 개의 크기. 좌표 위에 가운데가 오도록 앵커를 잡는 데 쓴다 */
 export const MARKER_SIZE = { width: 48, height: 24 };
