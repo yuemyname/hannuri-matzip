@@ -139,15 +139,15 @@
 - ⚠️ Chromium 으로 허용·거부·저정확도·캐시 4가지를 검증했다.
   `timeout` 분기와 지도 `panTo` 는 미검증 — 실기기에서 확인 필요.
 
-### [~] 1.3 반경 Circle + 현재위치 마커
+### [x] 1.3 반경 Circle + 현재위치 마커
 - `naver.maps.Circle` 반경 표시, 반경 변경 시 반지름 갱신
 - 현재 위치 마커 (파란 점 + accuracy 원)
 - 반경 변경 시 `map.fitBounds(circle.getBounds())`
-- **DoD**: 500m/1km/1.5km 토글 시 원과 줌 레벨이 함께 변함
-- ⚠️ 작업 환경에서 지도 SDK 가 차단돼 원·마커가 실제로 그려지는지 못 봤다.
-  확인한 것: 반경 토글 UI 동작(aria-pressed 전환, 키보드 조작), 마커 클래스가
-  CSS 번들에 실제로 생성됨(`.bg-my-location{background-color:var(--color-my-location)}`),
-  페이지 에러 0건. **실기기에서 원·마커·줌 변화 확인 필요.**
+- **DoD**: 30m/50m/100m 토글 시 원과 줌 레벨이 함께 변함
+- ✅ 실기기(Chrome)에서 파란 점·accuracy 원·반경 원·반경 토글 시 줌 변화 모두 확인.
+- ⚠️ 반경 옵션을 **30 / 50 / 100m, 기본 50m** 로 바꿨다 (원래 500m/1km/1.5km).
+  SPEC §0 의 "반경 1km 내 맛집" 전제와 §3.1/§3.2 의 `p_radius_m default 1000` 은
+  아직 1km 기준이다. 2.1 에서 RPC 를 만들 때 어느 쪽에 맞출지 정해야 한다.
 
 ### [ ] 1.4 지도 뷰 상태 스토어
 - zustand — `center / zoom / radius / selectedId`만 보관 (서버 데이터 금지)

@@ -297,7 +297,7 @@ create or replace function pick_restaurant(
 │   · 반경 Circle (반투명)      │
 │   · 맛집 마커 (평점 뱃지)     │
 ├─────────────────────────────┤
-│ [500m][1km][1.5km] ⇅거리순   │  필터바
+│ [30m][50m][100m] ⇅거리순     │  필터바
 │ (한식)(중식)(일식)(양식)...    │  카테고리 칩 (가로 스크롤)
 ├─────────────────────────────┤
 │ ▤ 리스트 (드래그 시트)        │
@@ -325,7 +325,7 @@ create or replace function pick_restaurant(
   - 뽑힌 시점에 `recommendation_logs` 에 `accepted = null` 로 행을 남긴다
   - [여기로] → 그 행을 `accepted = true` 로 update
   - [다시] → 직전 결과를 `accepted = false` 로 update, 같은 세션 내 재추첨에서 해당 맛집 제외
-- 후보 0건일 때: "반경을 넓히거나 필터를 풀어보세요" + [반경 1.5km로 넓히기] 버튼
+- 후보 0건일 때: "반경을 넓히거나 필터를 풀어보세요" + [반경 100m로 넓히기] 버튼
 - 접근성: 애니메이션은 `prefers-reduced-motion` 존중, 해당 시 즉시 결과 표시
 
 ### 4.3 `/restaurants/[id]` — 상세

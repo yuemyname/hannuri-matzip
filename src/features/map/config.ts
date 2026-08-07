@@ -23,9 +23,9 @@ export const FALLBACK_CENTER = {
 
 export const DEFAULT_ZOOM = 16;
 
-/** 반경 토글 (SPEC §4.1 "[500m][1km][1.5km]") */
-export const RADIUS_OPTIONS = [500, 1000, 1500] as const;
-export const DEFAULT_RADIUS = 1000;
+/** 반경 토글 (SPEC §4.1) */
+export const RADIUS_OPTIONS = [30, 50, 100] as const;
+export const DEFAULT_RADIUS = 50;
 
 /**
  * 지도 SDK 는 CSS 를 모른다. 색·투명도를 JS 값으로 넘겨야 해서 토큰을 읽어온다.
