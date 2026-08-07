@@ -46,10 +46,22 @@ end
 $$;
 
 -- ── 픽스처 ───────────────────────────────────────────────────────────
+-- profiles 는 여기서 안 만든다. on_auth_user_created 트리거가 만든다 (§2.4).
+-- 직접 넣으면 pkey 충돌이 나는데, 그 충돌이야말로 트리거가 돌았다는 증거다.
 insert into auth.users(id, email)
   values ('11111111-1111-1111-1111-111111111111', null);
-insert into profiles(id, display_name)
-  values ('11111111-1111-1111-1111-111111111111', '검증용');
+
+-- 트리거가 안 돌면 아래 픽스처가 FK 위반으로 죽는데, 그 메시지로는 원인이 안 보인다.
+-- 여기서 먼저 잡는다.
+do $$
+begin
+  if not exists (select 1 from profiles
+                  where id = '11111111-1111-1111-1111-111111111111') then
+    raise exception 'auth.users 삽입에 profiles 가 따라오지 않았다 (on_auth_user_created 미동작)';
+  end if;
+end
+$$;
+
 insert into restaurants(name, category, location, price_range, created_by)
   values ('김밥천국', '분식', st_makepoint(126.9780, 37.5665)::geography, 1,
           '11111111-1111-1111-1111-111111111111');
@@ -149,8 +161,6 @@ $$;
 -- 두 번째 사용자. 남의 것을 건드릴 수 있는지 확인하는 데 쓴다.
 insert into auth.users(id, email)
   values ('22222222-2222-2222-2222-222222222222', null);
-insert into profiles(id, display_name)
-  values ('22222222-2222-2222-2222-222222222222', '검증용2');
 insert into recommendation_logs(user_id, restaurant_id, meal_type)
   select '11111111-1111-1111-1111-111111111111', id, 'lunch'
     from restaurants where name = '김밥천국';
@@ -363,7 +373,6 @@ end
 $$;
 reset role;
 
-\echo '✓ 스키마 검증 통과'
 
 -- ── 6. restaurants_within RPC (SPEC §3.1) ────────────────────────────
 -- 이 절은 대량 데이터를 넣으므로 반드시 맨 뒤에 둔다.
@@ -456,3 +465,63 @@ begin
   raise notice 'restaurants_within 실행 계획에 restaurants_location_idx 사용 확인';
 end
 $$;
+
+-- ── 7. 익명 세션 뒷받침 (SPEC §2.4) ──────────────────────────────────
+-- auth.users 에 행이 생기면 profiles 가 따라 생겨야 한다. 안 생기면
+-- 첫 리뷰 작성이 FK 위반으로 실패하는데, 사용자에겐 이유가 안 보인다.
+do $$
+declare nick text; n int;
+begin
+  insert into auth.users(id, email)
+    values ('33333333-3333-3333-3333-333333333333', null);
+
+  select display_name into nick from profiles
+   where id = '33333333-3333-3333-3333-333333333333';
+
+  if nick is null then
+    raise exception 'auth.users 삽입에 profiles 가 따라오지 않았다 (트리거 미동작)';
+  end if;
+
+  -- 형용사 + 명사 + 4자리 (§2.4). 숫자가 빠지면 닉네임이 금방 겹친다.
+  if nick !~ '^[가-힣]+[0-9]{4}$' then
+    raise exception '닉네임 형식이 형용사+명사+4자리가 아니다: %', nick;
+  end if;
+
+  -- 매번 같은 값이 나오면 랜덤이 아니다. 400만 조합에서 30개가 전부 같을 확률은 0 에 가깝다.
+  select count(distinct public.random_display_name()) into n
+    from generate_series(1, 30);
+  if n < 25 then
+    raise exception '닉네임이 충분히 흩어지지 않는다 (30개 중 %개만 서로 다름)', n;
+  end if;
+
+  raise notice 'profiles 자동 생성 확인 (예: %)', nick;
+end
+$$;
+
+-- restaurant_stats 는 호출자 권한으로 돌아야 한다. 아니면 세션 없는 요청도
+-- 평점·리뷰 수를 읽어 가고, 그건 §2.3 의 "세션 없으면 0건" 과 어긋난다.
+do $$
+declare n int;
+begin
+  -- reloptions 는 'on' 으로도 'true' 로도 저장될 수 있다. 문자열 비교 말고 boolean 으로 읽는다.
+  if not coalesce((
+    select o.option_value
+      from pg_class c, pg_options_to_table(c.reloptions) o
+     where c.relname = 'restaurant_stats' and o.option_name = 'security_invoker'
+  ), 'off')::boolean then
+    raise exception 'restaurant_stats 에 security_invoker 가 안 켜져 있다';
+  end if;
+
+  set local role authenticated;
+  perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+  select count(*) into n from restaurant_stats;
+  reset role;
+
+  if n <> 0 then
+    raise exception '세션 없이 restaurant_stats 가 %건 읽혔다', n;
+  end if;
+  raise notice 'restaurant_stats security_invoker 확인 (세션 없이 0건)';
+end
+$$;
+
+\echo '✓ 스키마 검증 통과'

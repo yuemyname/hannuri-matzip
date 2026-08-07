@@ -49,7 +49,7 @@
   익명 세션 발급 후 조회 성공
 - ⚠️ `pnpm db:verify` 로 검증. Storage 는 shim 의 근사치라 실물 동작은 미검증이다.
 
-### [ ] 0.4 익명 세션
+### [~] 0.4 익명 세션
 > 로그인 UI 없음. 사용자는 인증이 있다는 사실 자체를 몰라야 한다.
 
 - Supabase 콘솔에서 Anonymous Sign-in 활성화 + rate limit 설정
@@ -62,6 +62,26 @@
   - 새로고침·재방문 시 같은 `user_id` 유지
   - 시크릿 모드로 열면 다른 `user_id`가 발급된다
   - `profiles`에 닉네임이 자동 생성되어 있다
+- `src/lib/supabase/` — `client.ts`(브라우저 싱글턴) / `session.ts`(`ensureSession`)
+  / `session-bootstrap.tsx`(layout 에서 1회 마운트, 렌더 없음).
+  마이그레이션 `20260808010000_profiles_trigger.sql` — `on_auth_user_created` 트리거,
+  `random_display_name()`(형용사 20 × 명사 20 × 4자리 = 400만 조합).
+- **단일 프로미스 가드가 실제로 값을 한다.** 동시 5회 호출을 재보면 가드가 있을 때
+  `signInAnonymously` 1회, 없을 때 5회다. supabase-js 내부 락은 여기까지 막지 않는다.
+  (참고: Next 15 dev 에서 StrictMode 이펙트 이중 실행은 관측되지 않았다. 이 가드가
+  막는 건 그게 아니라 P2 에서 조회 훅들이 각자 세션을 기다릴 때 생길 동시 호출이다.)
+- 함께 고친 것: `restaurant_stats` 에 `security_invoker = on`. 뷰가 소유자 권한으로
+  돌면 세션 없는 요청도 평점·리뷰 수를 읽어서 §2.3 의 "세션 없으면 0건" 이 깨진다.
+- `pnpm db:verify` 에 7절 추가. 반례 3종 확인 — 트리거를 빼면 "profiles 가 따라오지
+  않았다", `security_invoker` 를 빼면 "세션 없이 restaurant_stats 가 N건 읽혔다",
+  단일 프로미스를 빼면 발급이 5회로 늘어난다.
+- 브라우저 검증(Playwright, GoTrue 스텁): 최초 발급 / 새로고침·새 탭에 같은 user_id /
+  다른 저장소는 다른 user_id / 로그인 UI 0개 / 발급 실패해도 화면 정상 + 에러 비노출 /
+  탭 복귀 시 조용히 재시도 — 10개 항목 전부 통과, 페이지 에러 0건.
+- ⚠️ **실물 Supabase 미검증.** 작업 환경 프록시가 `*.supabase.co` 를 403 으로 막아서
+  GoTrue 스텁으로 확인했다. 콘솔에서 Anonymous Sign-ins 를 켠 뒤 실기기에서
+  DoD 4개를 한 번 확인해야 `[x]` 다. 특히 `auth.users` 트리거는 소유권 문제로
+  `db push` 가 거부될 수 있다 (storage.objects 때와 같은 계열).
 
 ### [x] 0.5 디자인 토큰 + 기본 컴포넌트
 > P1부터 화면을 만들기 시작하므로, **그 전에** 색·타입·간격을 고정한다.
