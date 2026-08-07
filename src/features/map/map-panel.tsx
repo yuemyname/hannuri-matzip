@@ -6,6 +6,7 @@ import type { useCurrentPosition } from "./use-current-position";
 import { useMapView, type LatLng } from "./map-store";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import type { SelectSource } from "@/features/restaurants/select-source";
+import { usePinMode } from "@/features/restaurants/pin-store";
 
 /**
  * 지도 + 위치 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
@@ -40,6 +41,9 @@ export function MapPanel({
   const zoom = useMapView((s) => s.zoom);
   const radius = useMapView((s) => s.radius);
   const setView = useMapView((s) => s.setView);
+  // 등록 화면의 핀 조정 단계 (SHELL.md §4). 모달 안에 지도를 새로 만들지 않고
+  // 이 지도를 그대로 쓴다.
+  const pinning = usePinMode((s) => s.active);
 
   // skipHydration 이라 마운트 후 직접 복원한다.
   useEffect(() => {
@@ -89,6 +93,21 @@ export function MapPanel({
         onSelect={handleSelect}
         onViewChange={setView}
       />
+
+      {/* 핀 조정 중에는 지도 정중앙에 핀을 고정한다. 핀을 끄는 게 아니라 지도를
+          움직인다 — 모바일에서 작은 핀을 손가락으로 끄는 것보다 정확하다 (SHELL.md §4). */}
+      {pinning && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        >
+          {/* 핀 끝이 정확히 중심에 오도록 아래로 절반만큼 올려 둔다 */}
+          <span className="-translate-y-1/2">
+            <span className="block size-5 rounded-chip border-2 border-white bg-primary shadow-marker" />
+            <span className="mx-auto block h-3 w-px bg-primary" />
+          </span>
+        </div>
+      )}
 
       {/* 배너는 지도 위에 겹친다. 지도 조작을 막지 않도록 바깥은 클릭을 통과시킨다.
           조회 실패·빈 결과 안내는 리스트가 맡는다 — 같은 말을 두 군데서 하지 않는다. */}

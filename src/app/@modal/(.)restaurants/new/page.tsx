@@ -1,10 +1,5 @@
-import { Modal } from "@/components/modal";
-import { RestaurantNewView } from "@/features/restaurants/restaurant-new-view";
+import { RestaurantNewModal } from "@/features/restaurants/restaurant-new-modal";
 
 export default function Page() {
-  return (
-    <Modal title="맛집 등록">
-      <RestaurantNewView />
-    </Modal>
-  );
+  return <RestaurantNewModal />;
 }

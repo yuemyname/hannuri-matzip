@@ -16,10 +16,18 @@ import * as Dialog from "@radix-ui/react-dialog";
 export function Modal({
   title,
   children,
+  /**
+   * `dock` 은 등록 화면의 핀 조정 단계 전용이다 (SHELL.md §4).
+   * 모달을 하단으로 내리고 배경 지도를 만질 수 있게 연다 — 모달 안에 두 번째
+   * 지도를 만들지 않기 위한 장치다.
+   */
+  variant = "full",
 }: {
   title: string;
   children: React.ReactNode;
+  variant?: "full" | "dock";
 }) {
+  const docked = variant === "dock";
   const router = useRouter();
   const contentRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<number | null>(null);
@@ -44,6 +52,9 @@ export function Modal({
   // 아래로 드래그해서 닫기 (SHELL.md §2 모바일 닫기 경로).
   // 핸들이 lg 이상에서 숨겨지므로 데스크톱에서는 이 경로가 아예 없다.
   const onPointerDown = (e: React.PointerEvent) => {
+    // 핀 조정 중에는 아래로 끌어 닫는 경로를 막는다. 지도를 움직이다가
+    // 손가락이 모달에 닿으면 폼이 통째로 사라진다.
+    if (docked) return;
     dragStart.current = e.clientY;
     e.currentTarget.setPointerCapture(e.pointerId);
   };
@@ -67,8 +78,17 @@ export function Modal({
       }}
     >
       <Dialog.Portal>
-        {/* 배경. 지도는 뒤에 그대로 살아있지만 이 오버레이가 인터랙션을 막는다 */}
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-ink-900/40" />
+        {/* 배경. 지도는 뒤에 그대로 살아있지만 이 오버레이가 인터랙션을 막는다.
+            핀 조정 중에는 지도를 만져야 하므로 투명 + 클릭 통과로 바꾼다 (SHELL.md §4).
+
+            **언마운트하지 않는다.** Radix Portal 은 자식을 마운트 순서대로 붙이는데,
+            오버레이를 껐다 켜면 Content 뒤에 다시 붙어서 모달 위를 덮는다.
+            그러면 폼이 통째로 안 눌린다. 존재는 유지하고 스타일만 바꾼다. */}
+        <Dialog.Overlay
+          className={`fixed inset-0 z-[var(--z-modal)] ${
+            docked ? "pointer-events-none bg-transparent" : "bg-ink-900/40"
+          }`}
+        />
 
         <Dialog.Content
           ref={contentRef}
@@ -82,16 +102,22 @@ export function Modal({
               ?.querySelector<HTMLElement>("[data-modal-title]")
               ?.focus();
           }}
+          // 핀 조정 중에는 모달 밖(=지도) 조작을 막지 않는다.
+          onInteractOutside={docked ? (e) => e.preventDefault() : undefined}
+          onPointerDownOutside={docked ? (e) => e.preventDefault() : undefined}
           style={dragY ? { transform: `translateY(${dragY}px)` } : undefined}
-          className="
+          className={`
             fixed inset-x-0 bottom-0 z-[var(--z-modal)]
-            flex max-h-[92dvh] flex-col
+            flex flex-col
             rounded-t-xl border border-border bg-background
             pb-[env(safe-area-inset-bottom)]
-            lg:inset-x-auto lg:bottom-auto lg:top-1/2 lg:left-1/2
-            lg:max-h-[85dvh] lg:w-full lg:max-w-[560px]
-            lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-lg
-          "
+            ${
+              docked
+                ? // 하단 220px. 지도를 최대한 열어 준다 (SHELL.md §4).
+                  "max-h-[13.75rem] shadow-sheet lg:inset-x-auto lg:right-4 lg:bottom-4 lg:w-full lg:max-w-[560px] lg:rounded-xl"
+                : "max-h-[92dvh] lg:inset-x-auto lg:bottom-auto lg:top-1/2 lg:left-1/2 lg:max-h-[85dvh] lg:w-full lg:max-w-[560px] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-lg"
+            }
+          `}
         >
           {/* 드래그 핸들 — 모바일 전용 */}
           <div
@@ -99,7 +125,9 @@ export function Modal({
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
-            className="flex shrink-0 cursor-grab touch-none justify-center py-2 lg:hidden"
+            className={`flex shrink-0 justify-center py-2 lg:hidden ${
+              docked ? "" : "cursor-grab touch-none"
+            }`}
           >
             <span className="h-1 w-10 rounded-chip bg-ink-300" />
           </div>

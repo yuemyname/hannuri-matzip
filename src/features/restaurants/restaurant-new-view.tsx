@@ -1,9 +1,407 @@
-// P5에서 채운다. 인터셉트 라우트와 풀페이지 fallback이 이 컴포넌트 하나를 같이 쓴다.
-export function RestaurantNewView() {
-  return (
-    <section>
-      <h2 className="text-xl font-bold">맛집 등록</h2>
-      <p>이름으로 검색하고 핀을 맞추는 자리예요.</p>
-    </section>
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { CategoryChip } from "@/components/category-chip";
+import { Distance } from "@/components/distance";
+import { CATEGORIES, type Category } from "@/lib/categories";
+import { useMapView } from "@/features/map/map-store";
+import { useCurrentPosition } from "@/features/map/use-current-position";
+import { usePinMode } from "./pin-store";
+import { usePlaceSearch, type PlaceCandidate } from "./use-place-search";
+import {
+  createRestaurant,
+  DuplicateRestaurantError,
+  type NewMenu,
+} from "./create";
+import { PRICE_LABEL } from "./sort";
+
+/**
+ * 맛집 등록 (SPEC §4.4 / SHELL.md §4). 3단계다.
+ *
+ *   1 이름 검색 → 후보 선택       모달 전체
+ *   2 지도에서 핀 미세조정         모달이 하단으로 내려가고 배경 지도를 쓴다
+ *   3 카테고리·가격·메모·메뉴      모달 전체
+ *
+ * **2단계에서 모달 안에 지도를 새로 만들지 않는다.** 인스턴스가 둘이 되면
+ * 메모리·NCP 요청이 두 배가 된다 (SHELL.md §4). 배경의 메인 지도를 그대로 쓰고,
+ * 좌표는 지도가 이미 쓰고 있는 `map-store.center` 에서 읽는다.
+ *
+ * `canPin` 이 false 면(풀페이지 fallback — 배경에 지도가 없다) 2단계를 건너뛰고
+ * 검색 좌표를 그대로 쓴다. 그 사실을 화면에 적어 준다.
+ */
+export type Step = "search" | "pin" | "detail";
+
+export function RestaurantNewView({ canPin }: { canPin: boolean }) {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { center: geoCenter } = useCurrentPosition();
+  const mapCenter = useMapView((s) => s.center);
+  const setPinMode = usePinMode((s) => s.setActive);
+
+  const [step, setStep] = useState<Step>("search");
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<PlaceCandidate | null>(null);
+  /** 직접 입력 경로. 검색이 막혀도 등록은 되어야 한다 (SPEC §4.4) */
+  const [manualName, setManualName] = useState("");
+
+  const [category, setCategory] = useState<Category | null>(null);
+  const [priceRange, setPriceRange] = useState<number | null>(null);
+  const [memo, setMemo] = useState("");
+  const [menus, setMenus] = useState<NewMenu[]>([
+    { name: "", price: null, isSignature: true },
+  ]);
+
+  // 핀으로 확정한 좌표. null 이면 아직 검색 결과 좌표를 쓴다.
+  const [pinned, setPinned] = useState<{ lat: number; lng: number } | null>(
+    null,
   );
+
+  const debounced = useDebounced(query, 400);
+  const search = usePlaceSearch(debounced);
+
+  // 핀 단계에 들어가고 나갈 때만 배경 지도에 신호를 준다.
+  // 모달이 언마운트될 때 반드시 꺼야 한다 — 안 그러면 메인에 핀이 남는다.
+  useEffect(() => {
+    setPinMode(step === "pin");
+    return () => setPinMode(false);
+  }, [step, setPinMode]);
+
+  const name = picked?.name ?? manualName.trim();
+  const coords =
+    pinned ?? (picked ? { lat: picked.lat, lng: picked.lng } : geoCenter);
+
+  const save = useMutation({
+    mutationFn: () =>
+      createRestaurant({
+        name,
+        category: category!,
+        address: picked?.address ?? null,
+        roadAddress: picked?.roadAddress ?? null,
+        lat: coords.lat,
+        lng: coords.lng,
+        priceRange,
+        phone: picked?.telephone || null,
+        memo: memo.trim() || null,
+        naverPlaceUrl: picked?.link || null,
+        menus,
+      }),
+    onSuccess: async (id) => {
+      await qc.invalidateQueries({ queryKey: ["restaurants", "nearby"] });
+      // 등록 직후 상세로 (SPEC §4.4-5). replace 라 뒤로가기가 등록 폼으로 안 돌아온다.
+      router.replace(`/restaurants/${id}`);
+    },
+  });
+
+  // ── 1단계: 이름 검색 ────────────────────────────────────────────
+  if (step === "search") {
+    return (
+      <div className="flex flex-col gap-4">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-label font-medium">가게 이름</span>
+          <Input
+            autoFocus
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setManualName(e.target.value);
+              setPicked(null);
+            }}
+            placeholder="한누리해장국"
+            enterKeyHint="search"
+          />
+        </label>
+
+        {search.isFetching && (
+          <p className="text-caption text-muted-foreground">찾는 중</p>
+        )}
+
+        {search.data?.error && (
+          // 검색이 막혀도 등록은 계속된다. 다음 행동을 알려준다 (CLAUDE.md)
+          <p role="status" className="text-caption text-muted-foreground">
+            {search.data.error}
+          </p>
+        )}
+
+        {search.data && search.data.places.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {search.data.places.map((p) => (
+              <li key={`${p.name}-${p.lat}-${p.lng}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPicked(p);
+                    setManualName(p.name);
+                    setPinned(null);
+                  }}
+                  className={`flex w-full flex-col gap-0.5 rounded-lg border p-3 text-left ${
+                    picked?.name === p.name && picked.lat === p.lat
+                      ? "border-brand-600 bg-accent"
+                      : "border-border hover:bg-accent"
+                  }`}
+                >
+                  <span className="text-subtitle">{p.name}</span>
+                  <span className="text-caption text-muted-foreground">
+                    {p.roadAddress || p.address}
+                  </span>
+                  {p.category && (
+                    <span className="text-caption text-muted-foreground">
+                      {p.category}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {debounced.length >= 2 &&
+          !search.isFetching &&
+          search.data?.places.length === 0 &&
+          !search.data.error && (
+            <p role="status" className="text-caption text-muted-foreground">
+              검색 결과가 없어요. 이름을 그대로 쓰고 위치는 직접 잡으면 돼요
+            </p>
+          )}
+
+        <div className="flex items-center gap-2">
+          <Button
+            disabled={name.length === 0}
+            onClick={() => setStep(canPin ? "pin" : "detail")}
+          >
+            {canPin ? "위치 잡기" : "다음"}
+          </Button>
+          {!picked && name.length > 0 && (
+            <span className="text-caption text-muted-foreground">
+              직접 입력한 이름으로 등록해요
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── 2단계: 핀 미세조정 (모달은 하단, 배경 지도를 쓴다) ──────────
+  if (step === "pin") {
+    const shown = mapCenter ?? coords;
+    return (
+      <div className="flex flex-col gap-3">
+        <div>
+          <p className="text-label font-medium">{name}</p>
+          <p className="text-caption text-muted-foreground">
+            지도를 움직여 가게 위치를 화면 가운데 핀에 맞춰 주세요
+          </p>
+        </div>
+
+        <p className="tnum text-caption text-muted-foreground">
+          {shown.lat.toFixed(6)}, {shown.lng.toFixed(6)}
+          {picked && (
+            <>
+              {" · 검색 위치에서 "}
+              <Distance meters={distanceM(shown, picked)} />
+            </>
+          )}
+        </p>
+
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => {
+              setPinned({ lat: shown.lat, lng: shown.lng });
+              setStep("detail");
+            }}
+          >
+            이 위치로 할게요
+          </Button>
+          <Button variant="ghost" onClick={() => setStep("search")}>
+            이름 다시 고르기
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 3단계: 나머지 정보 ──────────────────────────────────────────
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <p className="text-title">{name}</p>
+        <p className="tnum text-caption text-muted-foreground">
+          {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+        </p>
+        {!canPin && (
+          <p className="text-caption text-muted-foreground">
+            위치 미세조정은 메인 화면에서 등록할 때 할 수 있어요
+          </p>
+        )}
+      </div>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">
+          카테고리 <span className="text-danger">*</span>
+        </legend>
+        <div className="flex flex-wrap gap-2">
+          {CATEGORIES.map((c) => (
+            <CategoryChip
+              key={c}
+              category={c}
+              selected={category === c}
+              onToggle={(v) => setCategory(v)}
+            />
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">가격대</legend>
+        <div className="flex flex-wrap gap-1">
+          {[1, 2, 3, 4].map((p) => (
+            <button
+              key={p}
+              type="button"
+              aria-pressed={priceRange === p}
+              onClick={() => setPriceRange(priceRange === p ? null : p)}
+              className={`rounded-chip px-3 py-1.5 text-label ${
+                priceRange === p
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border bg-background text-foreground hover:bg-muted"
+              }`}
+            >
+              {PRICE_LABEL[p]}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-label font-medium">사내 메모</span>
+        <textarea
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          rows={2}
+          maxLength={200}
+          placeholder="웨이팅 김, 12시 전 도착 추천"
+          className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 placeholder:text-ink-400"
+        />
+      </label>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">메뉴</legend>
+        {menus.map((m, i) => (
+          // grid 로 잡는다. flex 는 Input 의 `w-full` 때문에 이름 칸이 안 줄어들어서
+          // 360px 에서 가격 칸과 [대표] 가 화면 밖으로 밀려난다.
+          <div
+            key={i}
+            className="grid grid-cols-[minmax(0,1fr)_5rem_auto] items-center gap-2"
+          >
+            <Input
+              value={m.name}
+              onChange={(e) =>
+                updateMenu(setMenus, i, { name: e.target.value })
+              }
+              placeholder="뼈해장국"
+              className="min-w-0"
+            />
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={m.price ?? ""}
+              onChange={(e) =>
+                updateMenu(setMenus, i, {
+                  price: e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+              placeholder="가격"
+              className="min-w-0"
+            />
+            <button
+              type="button"
+              aria-pressed={m.isSignature}
+              aria-label={`${m.name || `${i + 1}번째 메뉴`} 대표메뉴로 지정`}
+              onClick={() =>
+                setMenus((prev) =>
+                  // 대표메뉴는 하나만. 여러 개면 상세에서 뱃지가 줄줄이 붙는다.
+                  prev.map((x, j) => ({ ...x, isSignature: j === i })),
+                )
+              }
+              className={`shrink-0 rounded-chip px-2.5 py-1.5 text-label ${
+                m.isSignature
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              대표
+            </button>
+          </div>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={() =>
+            setMenus((prev) => [
+              ...prev,
+              { name: "", price: null, isSignature: false },
+            ])
+          }
+        >
+          메뉴 추가
+        </Button>
+      </fieldset>
+
+      {save.isError && (
+        <p role="alert" className="text-caption text-danger">
+          {save.error instanceof DuplicateRestaurantError
+            ? save.error.message
+            : "등록하지 못했어요. 잠시 후 다시 눌러 주세요."}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Button
+          disabled={category === null || name.length === 0 || save.isPending}
+          onClick={() => save.mutate()}
+        >
+          {save.isPending ? "등록 중" : "맛집 등록하기"}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => setStep(canPin ? "pin" : "search")}
+          disabled={save.isPending}
+        >
+          뒤로
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function updateMenu(
+  set: React.Dispatch<React.SetStateAction<NewMenu[]>>,
+  index: number,
+  patch: Partial<NewMenu>,
+) {
+  set((prev) => prev.map((m, i) => (i === index ? { ...m, ...patch } : m)));
+}
+
+/** 두 지점 사이 거리(m). 핀을 얼마나 옮겼는지 보여주는 용도라 근사로 충분하다 */
+function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+) {
+  const dLat = (a.lat - b.lat) * 111_320;
+  const dLng = (a.lng - b.lng) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.sqrt(dLat * dLat + dLng * dLng);
+}
+
+/** 타이핑마다 부르면 하루 쿼터가 금방 닳는다 */
+function useDebounced(value: string, ms: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
 }
