@@ -33,25 +33,37 @@
 - **DoD**: `pnpm dev` 실행 시 빈 페이지 렌더, `pnpm build` 통과.
   `src/app/globals.css`는 `@import "tailwindcss"`만 있는 상태 (토큰은 0.5에서)
 
-### [ ] 0.2 Supabase 프로젝트 + 스키마
+### [x] 0.2 Supabase 프로젝트 + 스키마
 - PostGIS 확장 활성화
 - `SPEC.md §2.1` 테이블 전부 마이그레이션 파일로 작성 (`supabase/migrations/`)
 - `restaurant_stats` 뷰
-- **DoD**: `supabase db reset` 후 스키마 재현 가능, 테이블 7개 존재 확인
+- **DoD**: `supabase db reset` 후 스키마 재현 가능,
+  테이블 6개 + 뷰 `restaurant_stats` 1개 존재 확인
+- ⚠️ 작업 환경에서 Docker 이미지 레지스트리가 차단되어 `supabase db reset` 은 실행하지 못했다.
+  `pnpm db:verify`(로컬 Postgres + shim)로 대체 검증했다. 로컬에서 1회 재확인 필요.
 
-### [ ] 0.3 RLS 정책
+### [x] 0.3 RLS 정책
 - `SPEC.md §2.3` 정책 전부 적용
 - Storage 버킷 `review-photos` 생성 + 정책
-- **DoD**: anon 키로 `select * from restaurants` 시 0건/거부, 로그인 후 조회 성공
+- **DoD**: 세션 없는 상태(anon 키만)로 `select * from restaurants` 시 0건/거부,
+  익명 세션 발급 후 조회 성공
+- ⚠️ `pnpm db:verify` 로 검증. Storage 는 shim 의 근사치라 실물 동작은 미검증이다.
 
-### [ ] 0.4 인증
-- Supabase Auth 매직링크 로그인 페이지 `/login` (**유일한 풀페이지. 모달 아님**)
-- 도메인 화이트리스트 훅
-- 미들웨어: 비로그인 시 `/login` 리다이렉트
-- 최초 로그인 시 `profiles` 자동 생성 트리거
-- **DoD**: 사내 도메인 이메일 로그인 성공, 외부 도메인 차단 확인
+### [ ] 0.4 익명 세션
+> 로그인 UI 없음. 사용자는 인증이 있다는 사실 자체를 몰라야 한다.
 
-### [ ] 0.5 디자인 토큰 + 기본 컴포넌트
+- Supabase 콘솔에서 Anonymous Sign-in 활성화 + rate limit 설정
+- 최초 진입 시 세션 없으면 `supabase.auth.signInAnonymously()` 자동 호출
+  (레이스 방지: 동시 호출이 겹치지 않도록 단일 프로미스로 감쌀 것)
+- `profiles` 자동 생성 트리거 — `display_name` 랜덤 부여 (형용사+명사+4자리)
+- 세션 복구 실패 시 조용히 재발급, 사용자에게 에러 노출 금지
+- **DoD**
+  - 처음 접속한 브라우저에서 로그인 화면 없이 바로 메인이 뜬다
+  - 새로고침·재방문 시 같은 `user_id` 유지
+  - 시크릿 모드로 열면 다른 `user_id`가 발급된다
+  - `profiles`에 닉네임이 자동 생성되어 있다
+
+### [~] 0.5 디자인 토큰 + 기본 컴포넌트
 > P1부터 화면을 만들기 시작하므로, **그 전에** 색·타입·간격을 고정한다.
 > 건너뛰면 화면마다 색이 미묘하게 달라지고 나중에 전부 되돌려야 한다.
 
@@ -71,6 +83,14 @@
   - `rg -n '#[0-9a-fA-F]{6}' src --glob '!**/globals.css'` → **0건**
   - 360px 폭에서 `/design` 레이아웃 안 깨짐
   - Tab만으로 CategoryChip 토글 가능, 포커스 링 육안 확인
+- ⚠️ **shadcn/ui 초기화만 남았다.** 작업 환경에서 `ui.shadcn.com` 이 차단되어
+  `shadcn init` / `add` 가 레지스트리를 못 받는다. 로컬에서 아래를 돌리고 커밋하면 끝난다.
+  ```
+  pnpm dlx shadcn@latest init
+  pnpm dlx shadcn@latest add button input dialog sheet badge skeleton dropdown-menu switch toast alert-dialog
+  ```
+  토큰·3종 컴포넌트·`/design` 과 DoD 4개는 전부 끝났다. 0.6 이 Dialog/Sheet 를 쓰므로
+  그 전에는 반드시 필요하다.
 
 ### [ ] 0.6 셸 + 모달 인프라
 > `SHELL.md` 전체가 이 태스크의 스펙이다. 여기가 어긋나면 P3~P5를 전부 다시 짠다.
@@ -91,7 +111,7 @@
 
 ## P1 — 지도 (핵심 리스크 구간, 먼저 뚫는다)
 
-### [ ] 1.1 네이버 지도 최소 렌더 ⚠️ 최우선
+### [~] 1.1 네이버 지도 최소 렌더 ⚠️ 최우선
 > 이 태스크가 막히면 프로젝트 전체가 막힌다. 가장 먼저 검증한다.
 > **P0.2보다 먼저 시도해도 좋다.**
 
@@ -101,6 +121,13 @@
 - `window.navermap_authFailure` 핸들러
 - 타입 선언 (`@types/navermaps` 또는 자체 `.d.ts`)
 - **DoD**: 로컬에서 지도 표시 + 콘솔 에러 0건. 스크린샷 확인.
+- ⚠️ **지도 실물은 아직 못 띄웠다.** 작업 환경에서 `oapi.map.naver.com` 이 차단돼 있고
+  NCP Client ID 도 없다. 코드·타입·폴백은 다 들어갔고 에러 경로 두 개만 확인했다.
+  - 키 없음 → 안내 표시, SDK 요청 아예 안 함
+  - 키 있음 + 로드 실패 → 안내 표시, 페이지 에러 0건
+  남은 확인: `.env.local` 에 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID` 를 넣고
+  NCP 콘솔 서비스 URL 에 `http://localhost:3000` 을 등록한 뒤 `pnpm dev` 로 지도가 뜨는지.
+  인증 실패하면 `navermap_authFailure` 가 잡아 서비스 URL 을 확인하라고 안내한다.
 
 ### [ ] 1.2 Geolocation 훅
 - `useCurrentPosition()` — `SPEC.md §5` 상태 머신 구현
@@ -224,6 +251,8 @@
 
 ### [ ] 5.4 `/me` 모달
 - 내 리뷰 / 내가 등록한 맛집 / 추천 히스토리
+- 닉네임 변경
+- **세션 소실 고지** — "이 기기에서만 내 기록으로 인식됩니다" 한 줄
 - **DoD**: 각 섹션 빈 상태 UI 존재
 
 ---
@@ -238,7 +267,7 @@
 - 키보드 전용 조작으로 전 플로우 완주
 - 모달 focus trap, Esc 닫기, 닫은 뒤 트리거로 포커스 복귀
 - 별점 색+숫자 병기, 포커스 링, 명도 대비 4.5:1
-- **DoD**: 마우스 없이 로그인→검색→리뷰 작성 완료 가능
+- **DoD**: 마우스 없이 진입→검색→리뷰 작성 완료 가능
 
 ### [ ] 6.3 Vercel 배포
 - 환경변수 설정, **NCP 서비스 URL에 배포 도메인 추가**

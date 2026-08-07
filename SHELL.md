@@ -32,8 +32,9 @@ src/app/
   restaurants/new/page.tsx        #   직접 진입 / 새로고침 / 슬랙 링크 클릭 시
   restaurants/[id]/page.tsx
   me/page.tsx
-  login/page.tsx                  # 유일한 진짜 풀페이지. 모달 아님
 ```
+
+로그인 화면이 없으므로(익명 세션) 풀페이지는 fallback 4개뿐이다.
 
 `(.)` = 같은 레벨 인터셉트. `@modal/default.tsx`가 없으면 새로고침 시 404가 난다.
 

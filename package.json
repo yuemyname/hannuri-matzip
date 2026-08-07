@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "db:verify": "bash scripts/verify-schema.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/navermaps": "^3.9.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -31,6 +33,7 @@
     "eslint-config-next": "15.5.23",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.6",
+    "supabase": "^2.111.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

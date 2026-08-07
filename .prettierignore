@@ -5,6 +5,12 @@ build
 pnpm-lock.yaml
 next-env.d.ts
 
-# 손으로 쓴 설계 문서 + 0.5에서 옮겨올 토큰 원본. 포맷터가 건드리면 diff만 지저분해진다.
+# 손으로 쓴 설계 문서. 포맷터가 건드리면 diff만 지저분해진다.
 *.md
-/globals.css
+
+# 토큰 정본. 값을 열 맞춰 적어둔 파일이라 포맷터가 정렬을 무너뜨린다.
+/src/app/globals.css
+
+# 벤더링한 폰트 (npm pretendard 에서 그대로 복사)
+/public/fonts
+/src/app/fonts.css

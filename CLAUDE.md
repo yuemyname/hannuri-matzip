@@ -6,7 +6,9 @@
 ## 작업 방식
 
 - WBS 태스크 하나 = 커밋 하나. DoD를 만족하기 전에 다음 태스크로 넘어가지 않는다.
-- 태스크 완료 시 WBS.md의 해당 항목을 `[x]`로 바꾸고 같은 커밋에 포함한다.
+- 태스크 완료 시 `WBS.md`의 해당 항목을 `[x]`로 바꾸고 **같은 커밋에 포함한다.**
+  세션이 바뀌어도 이게 인수인계서 역할을 한다.
+- 태스크 하나가 끝나면 멈추고 보고한다. 여러 태스크를 이어서 진행하지 않는다.
 - 태스크 시작 전 해당 SPEC 절을 읽는다. SPEC에 이미 정해진 건 다시 제안하지 않는다.
 - SPEC에 없는 결정이 필요하면 **추측하지 말고 물어본다.** 특히 스키마, 외부 API 파라미터.
 - 파일을 새로 만들기 전에 기존 파일에 넣을 자리가 있는지 먼저 본다.
@@ -24,7 +26,8 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 이 앱은 **메인 화면 하나 위에서 동작한다.** 지도+리스트가 항상 배경에 살아있고,
 다른 화면은 그 위에 모달로 뜬다. 자세한 규칙은 `SHELL.md`.
 
-- 새 화면을 만들 때 기본 답은 **모달**이다. 풀페이지 라우트는 `/login` 뿐이다.
+- 새 화면을 만들 때 기본 답은 **모달**이다. 로그인 화면이 없으므로 풀페이지는
+  fallback 용도로만 존재한다.
 - 구현은 Intercepting Routes(`@modal` 슬롯). `useState`로 여는 모달 금지 —
   URL이 안 남으면 뒤로가기·공유·새로고침이 전부 깨진다.
 - 모든 모달 경로는 **풀페이지 fallback을 함께 만든다** (직접 진입·새로고침용).
@@ -34,8 +37,10 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 ## 스타일 규칙
 
 ### 토큰
-- 색·폰트·간격·radius·shadow는 **전부 `src/app/globals.css` 토큰 경유.**
+- 색·폰트·간격·radius·shadow는 **전부 토큰 경유.**
   컴포넌트 파일에 hex나 raw px가 들어가면 실패다.
+- 토큰 정본은 `src/app/globals.css`. (0.5에서 루트 `design-tokens.css`를 여기로
+  이관하고 원본은 삭제했다.)
 - Tailwind 기본 팔레트 사용 금지. `bg-orange-500` ✗ → `bg-brand-600` ✓,
   `text-gray-500` ✗ → `text-ink-500` ✓
 - 의미가 있는 곳은 시맨틱 이름을 우선한다: `text-muted-foreground` > `text-ink-500`
@@ -80,9 +85,14 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 ### 데이터
 - 서버 상태는 TanStack Query. `useEffect` + `fetch` 수동 조합 금지.
 - zustand는 지도 뷰 상태(center, zoom, radius, selectedId)만. 서버 데이터 넣지 말 것.
+- 인증은 익명 세션이다. 로그인 UI를 만들지 말 것. `signInAnonymously()`는
+  앱 부트스트랩에서 한 번만, 단일 프로미스로 호출한다.
 - 추천 결과는 **서버가 결정한다.** 클라이언트 랜덤 금지. 애니메이션은 응답 수신 후 연출일 뿐.
 - `SUPABASE_SERVICE_ROLE_KEY`, `NAVER_SEARCH_CLIENT_SECRET`은 서버 라우트 전용.
   `NEXT_PUBLIC_` 접두사 붙이지 말 것.
+- 카테고리 목록의 단일 소스는 `src/lib/categories.ts`.
+  DB check 제약, 필터칩, 등록 폼 셀렉트가 전부 여기서 파생된다.
+  값을 추가할 때는 마이그레이션과 이 파일을 같은 커밋에서 바꾼다.
 
 ### 하지 말 것
 - 네이버 플레이스 리뷰/평점 크롤링 (약관 위반)
