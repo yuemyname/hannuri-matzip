@@ -111,7 +111,7 @@
 
 ## P1 — 지도 (핵심 리스크 구간, 먼저 뚫는다)
 
-### [~] 1.1 네이버 지도 최소 렌더 ⚠️ 최우선
+### [x] 1.1 네이버 지도 최소 렌더 ⚠️ 최우선
 > 이 태스크가 막히면 프로젝트 전체가 막힌다. 가장 먼저 검증한다.
 > **P0.2보다 먼저 시도해도 좋다.**
 
@@ -121,13 +121,15 @@
 - `window.navermap_authFailure` 핸들러
 - 타입 선언 (`@types/navermaps` 또는 자체 `.d.ts`)
 - **DoD**: 로컬에서 지도 표시 + 콘솔 에러 0건. 스크린샷 확인.
-- ⚠️ **지도 실물은 아직 못 띄웠다.** 작업 환경에서 `oapi.map.naver.com` 이 차단돼 있고
-  NCP Client ID 도 없다. 코드·타입·폴백은 다 들어갔고 에러 경로 두 개만 확인했다.
-  - 키 없음 → 안내 표시, SDK 요청 아예 안 함
-  - 키 있음 + 로드 실패 → 안내 표시, 페이지 에러 0건
-  남은 확인: `.env.local` 에 `NEXT_PUBLIC_NAVER_MAP_CLIENT_ID` 를 넣고
-  NCP 콘솔 서비스 URL 에 `http://localhost:3000` 을 등록한 뒤 `pnpm dev` 로 지도가 뜨는지.
-  인증 실패하면 `navermap_authFailure` 가 잡아 서비스 URL 을 확인하라고 안내한다.
+- ✅ **Vercel 배포본(`hannuri-matzip.vercel.app`)에서 지도 렌더 확인.** iPad Safari,
+  폴백 좌표(시청역) 정상. 인증 통과 = NCP 서비스 URL 등록까지 맞다는 뜻.
+  - NCP 는 `AI·NAVER API` 가 아니라 **독립 상품 `Maps`** 로 옮겨져 있다.
+    콘솔 검색창에 `Maps` → Application 등록 → API 선택에서 **Dynamic Map**.
+  - Web 서비스 URL 은 입력 후 **`+ 추가` 를 눌러야** 저장된다.
+  - `NEXT_PUBLIC_*` 은 빌드 시 코드에 박히므로 Vercel 환경변수 추가 후 **재배포 필수**.
+  - 로컬에서 돌리려면 NCP 서비스 URL 에 `http://localhost:3000` 을 추가로 등록한다.
+  - 작업 환경에서는 `oapi.map.naver.com` 이 차단돼 에러 경로만 검증했었다
+    (키 없음 / 로드 실패). 콘솔 에러 0건은 실기기에서 미확인.
 
 ### [ ] 1.2 Geolocation 훅
 - `useCurrentPosition()` — `SPEC.md §5` 상태 머신 구현
