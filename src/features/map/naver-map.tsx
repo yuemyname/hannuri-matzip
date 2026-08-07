@@ -10,12 +10,28 @@ import {
   readToken,
   readTokenNumber,
 } from "./config";
+import {
+  MARKER_SIZE,
+  markerIconHtml,
+  markerIconKey,
+} from "./restaurant-marker-icon";
 import type { MapViewProps } from "./map-view";
 
 type Status = "loading" | "ready" | "no-key" | "load-failed" | "auth-failed";
 
 /** 지도를 움직이는 동안 스토어에 계속 쓰지 않도록 잠깐 모은다 (WBS 1.4 "debounce") */
 const SAVE_DEBOUNCE_MS = 300;
+
+/** 좌표 위에 배지 가운데가 오도록 앵커를 잡는다 */
+function icon(
+  r: Parameters<typeof markerIconHtml>[0],
+  selected: boolean,
+): naver.maps.HtmlIcon {
+  return {
+    content: markerIconHtml(r, selected),
+    anchor: new naver.maps.Point(MARKER_SIZE.width / 2, MARKER_SIZE.height / 2),
+  };
+}
 
 const MESSAGE: Record<Exclude<Status, "loading" | "ready">, string> = {
   "no-key":
@@ -34,8 +50,12 @@ export default function NaverMap({
   initialCenter,
   initialZoom,
   focus,
+  anchor,
   me,
   radius,
+  restaurants,
+  selectedId,
+  onSelect,
   onViewChange,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,10 +64,17 @@ export default function NaverMap({
   const accuracyRef = useRef<naver.maps.Circle | null>(null);
   const radiusRef = useRef<naver.maps.Circle | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 맛집 마커. 지우고 다시 만들지 않고 이 맵을 diff 로 맞춘다 (CLAUDE.md).
+  const markersRef = useRef(
+    new Map<string, { marker: naver.maps.Marker; iconKey: string }>(),
+  );
 
   // idle 리스너는 지도 생성 시 한 번만 붙는다. 최신 콜백을 ref 로 넘겨준다.
   const onViewChangeRef = useRef(onViewChange);
   onViewChangeRef.current = onViewChange;
+  // 마커 클릭 리스너도 마커마다 한 번만 붙는다. 같은 이유로 ref 를 거친다.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
   const [status, setStatus] = useState<Status>(
     NAVER_MAP_CLIENT_ID ? "loading" : "no-key",
   );
@@ -62,11 +89,19 @@ export default function NaverMap({
   }, []);
 
   useEffect(() => {
+    // ref 는 언마운트 시점에 바뀌어 있을 수 있다. 컨테이너 자체는 한 번만 만들어지므로
+    // 여기서 붙잡아 두고 정리 때 그걸 쓴다.
+    const markers = markersRef.current;
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       meMarkerRef.current?.setMap(null);
       accuracyRef.current?.setMap(null);
       radiusRef.current?.setMap(null);
+      for (const { marker } of markers.values()) {
+        naver.maps.Event.clearInstanceListeners(marker);
+        marker.setMap(null);
+      }
+      markers.clear();
       mapRef.current?.destroy();
       mapRef.current = null;
     };
@@ -110,7 +145,9 @@ export default function NaverMap({
     const stroke = readToken("--color-brand-500");
     radiusRef.current = new naver.maps.Circle({
       map,
-      center: map.getCenter(),
+      // 지도 중심이 아니라 anchor 다. 지도를 끌어도 반경 기준은 내 위치에 머문다 —
+      // 원이 그려진 곳과 조회 결과가 어긋나면 안 된다.
+      center: new naver.maps.LatLng(anchor.lat, anchor.lng),
       radius,
       // 토큰을 못 읽으면 색 옵션을 빼고 SDK 기본값에 맡긴다
       ...(stroke ? { strokeColor: stroke, fillColor: stroke } : {}),
@@ -126,11 +163,18 @@ export default function NaverMap({
   useEffect(() => {
     const map = mapRef.current;
     if (status !== "ready" || !map || !focus) return;
-    const at = new naver.maps.LatLng(focus.lat, focus.lng);
-    ensureRadiusCircle(map).setCenter(at);
-    map.panTo(at);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    map.panTo(new naver.maps.LatLng(focus.lat, focus.lng));
   }, [status, focus]);
+
+  // 반경 원은 anchor 를 따라간다 (내 위치를 얻으면 거기로, 못 얻으면 사무실 폴백).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== "ready" || !map) return;
+    ensureRadiusCircle(map).setCenter(
+      new naver.maps.LatLng(anchor.lat, anchor.lng),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, anchor.lat, anchor.lng]);
 
   // 반경이 바뀌면 반지름과 줌이 함께 움직인다 (WBS 1.3 DoD).
   // 첫 실행에서 저장된 줌이 있으면 fitBounds 를 건너뛴다 — 복원한 뷰를 덮어쓰지 않으려고.
@@ -195,6 +239,54 @@ export default function NaverMap({
       meMarkerRef.current.setPosition(at);
     }
   }, [status, me]);
+
+  // 맛집 마커 — diff 갱신. 전부 setMap(null) 후 재생성하면 필터를 바꿀 때마다
+  // 지도가 통째로 깜빡인다 (CLAUDE.md, WBS 2.3 DoD).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== "ready" || !map) return;
+
+    const alive = new Set(restaurants.map((r) => r.id));
+
+    // 1) 사라진 것만 지운다
+    for (const [id, entry] of markersRef.current) {
+      if (alive.has(id)) continue;
+      naver.maps.Event.clearInstanceListeners(entry.marker);
+      entry.marker.setMap(null);
+      markersRef.current.delete(id);
+    }
+
+    // 2) 남은 것은 바뀐 부분만 손댄다
+    for (const r of restaurants) {
+      const selected = r.id === selectedId;
+      const iconKey = markerIconKey(r, selected);
+      const zIndex = selected ? 60 : 50;
+      const existing = markersRef.current.get(r.id);
+
+      if (existing) {
+        // 별점·선택 상태가 그대로면 DOM 을 건드리지 않는다
+        if (existing.iconKey !== iconKey) {
+          existing.marker.setIcon(icon(r, selected));
+          existing.iconKey = iconKey;
+        }
+        existing.marker.setZIndex(zIndex);
+        continue;
+      }
+
+      const marker = new naver.maps.Marker({
+        map,
+        position: new naver.maps.LatLng(r.lat, r.lng),
+        title: r.name,
+        icon: icon(r, selected),
+        zIndex,
+      });
+      // 아이콘 안의 button 을 키보드로 눌러도 여기로 온다 (click 이 버블한다)
+      naver.maps.Event.addListener(marker, "click", () =>
+        onSelectRef.current(r.id),
+      );
+      markersRef.current.set(r.id, { marker, iconKey });
+    }
+  }, [status, restaurants, selectedId]);
 
   return (
     <div className="relative size-full">

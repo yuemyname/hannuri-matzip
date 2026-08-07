@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { NearbyRestaurant } from "@/features/restaurants/api";
 import type { Coords } from "./use-current-position";
 import type { LatLng } from "./map-store";
 
@@ -27,8 +28,13 @@ export type MapViewProps = {
   initialZoom: number | null;
   /** 여기로 옮기라는 신호. 값이 바뀔 때만 panTo 한다 */
   focus: LatLng | null;
+  /** 반경의 기준점. 지도를 끌어도 여기 머문다 (내 위치 또는 사무실 폴백) */
+  anchor: LatLng;
   me: Coords | null;
   radius: number;
+  restaurants: NearbyRestaurant[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
   onViewChange: (center: LatLng, zoom: number) => void;
 };
 
