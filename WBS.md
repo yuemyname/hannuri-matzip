@@ -10,7 +10,7 @@
 
 ## P0 — 기반 (반나절)
 
-### [ ] 0.1 프로젝트 스캐폴딩
+### [x] 0.1 프로젝트 스캐폴딩
 - `create-next-app` — TypeScript, Tailwind, App Router, `src/` 디렉터리
 - ESLint + Prettier, `strict: true`
 - 디렉터리 구조 생성:
