@@ -1,6 +1,6 @@
 # SPEC.md — 사무실 맛집 지도 (hannuri-matzip)
 
-> 사내 구성원이 현재 위치 반경 1km 내 맛집을 지도+리스트로 탐색하고,
+> 사내 구성원이 현재 위치 반경 200m 내 맛집을 지도+리스트로 탐색하고,
 > 별점·리뷰를 남기고, 점메추/저메추 랜덤 추천을 받는 내부용 웹앱.
 
 ---
@@ -219,7 +219,7 @@ group by r.id;
 create or replace function restaurants_within(
   p_lat double precision,
   p_lng double precision,
-  p_radius_m integer default 1000,
+  p_radius_m integer default 200,
   p_categories text[] default null,
   p_min_rating numeric default null
 )
@@ -255,7 +255,7 @@ $$;
 create or replace function pick_restaurant(
   p_lat double precision,
   p_lng double precision,
-  p_radius_m integer default 1000,
+  p_radius_m integer default 200,
   p_meal_type text default 'lunch',
   p_categories text[] default null,
   p_max_price smallint default null,
@@ -297,7 +297,7 @@ create or replace function pick_restaurant(
 │   · 반경 Circle (반투명)      │
 │   · 맛집 마커 (평점 뱃지)     │
 ├─────────────────────────────┤
-│ [30m][50m][100m] ⇅거리순     │  필터바
+│ [30m][50m][100m][200m] ⇅거리순│  필터바
 │ (한식)(중식)(일식)(양식)...    │  카테고리 칩 (가로 스크롤)
 ├─────────────────────────────┤
 │ ▤ 리스트 (드래그 시트)        │
@@ -325,7 +325,7 @@ create or replace function pick_restaurant(
   - 뽑힌 시점에 `recommendation_logs` 에 `accepted = null` 로 행을 남긴다
   - [여기로] → 그 행을 `accepted = true` 로 update
   - [다시] → 직전 결과를 `accepted = false` 로 update, 같은 세션 내 재추첨에서 해당 맛집 제외
-- 후보 0건일 때: "반경을 넓히거나 필터를 풀어보세요" + [반경 100m로 넓히기] 버튼
+- 후보 0건일 때: "반경을 넓히거나 필터를 풀어보세요" + [반경 200m로 넓히기] 버튼
 - 접근성: 애니메이션은 `prefers-reduced-motion` 존중, 해당 시 즉시 결과 표시
 
 ### 4.3 `/restaurants/[id]` — 상세

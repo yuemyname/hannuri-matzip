@@ -23,8 +23,8 @@ export const FALLBACK_CENTER = {
 
 export const DEFAULT_ZOOM = 16;
 
-/** 반경 토글 (SPEC §4.1) */
-export const RADIUS_OPTIONS = [30, 50, 100] as const;
+/** 반경 토글 (SPEC §4.1). 100m 넘게 걸어가서 먹는 일이 없다는 판단으로 200m 가 상한 */
+export const RADIUS_OPTIONS = [30, 50, 100, 200] as const;
 export const DEFAULT_RADIUS = 50;
 
 /**
