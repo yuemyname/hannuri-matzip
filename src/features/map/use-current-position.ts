@@ -9,7 +9,7 @@ export type PositionStatus =
 
 export type Coords = { lat: number; lng: number; accuracy: number };
 
-const CACHE_KEY = "lunchmap:position";
+const CACHE_KEY = "hannuri-matzip:position";
 const CACHE_MS = 60_000; // SPEC §5 "sessionStorage 에 캐시(1분)"
 const LOW_ACCURACY_M = 200; // 이보다 부정확하면 힌트를 띄운다
 

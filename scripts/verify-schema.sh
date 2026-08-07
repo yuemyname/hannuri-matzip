@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-DB="${VERIFY_DB:-lunchmap_verify}"
+DB="${VERIFY_DB:-hannuri_matzip_verify}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 command -v psql >/dev/null 2>&1 || {

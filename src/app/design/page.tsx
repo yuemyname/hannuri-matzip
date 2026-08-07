@@ -5,7 +5,7 @@ import { ChipDemo } from "./chip-demo";
 
 // 개발 전용 화면. 배포돼도 색인되지 않게 막는다.
 export const metadata: Metadata = {
-  title: "디자인 토큰 — lunchmap",
+  title: "디자인 토큰 — hannuri-matzip",
   robots: { index: false, follow: false },
 };
 
@@ -160,7 +160,7 @@ export default function DesignPage() {
         <ul className="flex flex-col gap-3">
           {TYPE.map(([cls, label]) => (
             <li key={cls} className="flex flex-col gap-1">
-              <span className={cls}>점심 뭐 먹지 lunchmap 0123</span>
+              <span className={cls}>점심 뭐 먹지 hannuri-matzip 0123</span>
               <span className="text-caption text-muted-foreground">
                 {label}
               </span>

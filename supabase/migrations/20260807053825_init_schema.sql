@@ -1,4 +1,4 @@
--- lunchmap 초기 스키마 — SPEC.md §2.1 (테이블), §2.2 (집계 뷰)
+-- hannuri-matzip 초기 스키마 — SPEC.md §2.1 (테이블), §2.2 (집계 뷰)
 -- RLS 정책과 Storage 버킷은 WBS 0.3에서 별도 마이그레이션으로 추가한다.
 
 create extension if not exists postgis;

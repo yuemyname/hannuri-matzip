@@ -1,4 +1,4 @@
-# CLAUDE.md — lunchmap
+# CLAUDE.md — hannuri-matzip
 
 사무실 맛집 지도. 사내 구성원용 Next.js 웹앱.
 설계는 `SPEC.md`, 작업 순서는 `WBS.md`. **둘이 충돌하면 SPEC이 이긴다.**

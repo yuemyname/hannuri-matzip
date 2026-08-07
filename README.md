@@ -1,4 +1,4 @@
-# lunchmap
+# hannuri-matzip
 
 사무실 맛집 지도. 사내 구성원용 Next.js 웹앱.
 

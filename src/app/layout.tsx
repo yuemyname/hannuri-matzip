@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "lunchmap",
+  title: "hannuri-matzip",
   description: "사무실 맛집 지도",
 };
 

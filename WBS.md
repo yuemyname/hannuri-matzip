@@ -1,4 +1,4 @@
-# WBS.md — 사무실 맛집 지도 (lunchmap)
+# WBS.md — 사무실 맛집 지도 (hannuri-matzip)
 
 `SPEC.md`(설계) + `SHELL.md`(화면 구조) 기준 작업 분해.
 각 태스크는 독립 커밋 단위이며,
