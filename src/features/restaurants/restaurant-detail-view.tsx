@@ -10,7 +10,7 @@ import { signedPhotoUrls } from "@/features/reviews/api";
 import { ReviewForm } from "@/features/reviews/review-form";
 import { MenuEditor } from "./menu-editor";
 import { useCurrentUserId, useRestaurantDetail } from "./use-detail";
-import { PRICE_LABEL } from "./sort";
+import { PRICE_LABEL } from "./price";
 import type { RestaurantDetail, Review } from "./detail-api";
 
 /**
@@ -76,10 +76,10 @@ export function RestaurantDetailView({ id }: { id: string }) {
 
       <section className="flex flex-col gap-2">
         <h4 className="text-label font-medium">별점</h4>
+        {/* 평균 + 리뷰 수만. 점수별 분포는 뺐다 — 사내 맛집은 리뷰가 한 자릿수라
+            막대 다섯 줄이 알려 주는 게 "5점 2건" 정도고, 그건 아래 리뷰 목록에
+            이미 다 적혀 있다. */}
         <Rating value={data.avgRating} count={data.reviewCount} />
-        {data.reviewCount > 0 && (
-          <Distribution counts={data.distribution} total={data.reviewCount} />
-        )}
       </section>
 
       <section className="flex flex-col gap-2">
@@ -202,41 +202,6 @@ function Header({ data }: { data: RestaurantDetail }) {
         네이버 지도에서 열기
       </a>
     </header>
-  );
-}
-
-/** 5→1 점 분포 막대. 막대만 두면 안 보이는 사람이 있으니 숫자를 함께 적는다 */
-function Distribution({
-  counts,
-  total,
-}: {
-  counts: readonly number[];
-  total: number;
-}) {
-  return (
-    <ul className="flex flex-col gap-1">
-      {counts.map((n, i) => {
-        const score = 5 - i;
-        const pct = total ? (n / total) * 100 : 0;
-        return (
-          <li key={score} className="flex items-center gap-2">
-            <span className="tnum w-8 shrink-0 text-caption text-muted-foreground">
-              {score}점
-            </span>
-            <span className="h-2 min-w-0 flex-1 overflow-hidden rounded-chip bg-muted">
-              {/* 데이터에서 나온 비율이라 인라인 스타일로 둔다 (Rating 과 같은 이유) */}
-              <span
-                className="block h-full rounded-chip bg-star"
-                style={{ width: `${pct}%` }}
-              />
-            </span>
-            <span className="tnum w-6 shrink-0 text-right text-caption text-muted-foreground">
-              {n}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

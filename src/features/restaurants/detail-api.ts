@@ -38,8 +38,6 @@ export type RestaurantDetail = {
   reviews: Review[];
   avgRating: number;
   reviewCount: number;
-  /** 5→1 점 순 개수. 분포 막대에 쓴다 */
-  distribution: [number, number, number, number, number];
 };
 
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v));
@@ -131,13 +129,6 @@ export async function fetchDetail(
     .filter((v): v is Review => v !== null)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  const distribution: [number, number, number, number, number] = [
-    0, 0, 0, 0, 0,
-  ];
-  for (const v of reviews) {
-    const i = 5 - Math.round(v.rating); // 5점이 0번 칸
-    if (i >= 0 && i < 5) distribution[i] += 1;
-  }
   const sum = reviews.reduce((acc, v) => acc + v.rating, 0);
 
   return {
@@ -159,7 +150,6 @@ export async function fetchDetail(
       ? Math.round((sum / reviews.length) * 10) / 10
       : 0,
     reviewCount: reviews.length,
-    distribution,
   };
 }
 
