@@ -50,6 +50,7 @@ export function PickView() {
   // 세션 안에서 이미 뽑힌 것들. 서버가 이걸 받아 같은 곳을 피한다 (WBS 4.4 DoD).
   const [seen, setSeen] = useState<string[]>([]);
   const [result, setResult] = useState<NearbyRestaurant | null>(null);
+  const [signatureMenu, setSignatureMenu] = useState<string | null>(null);
   const [logId, setLogId] = useState<string | null>(null);
   const [emptyPool, setEmptyPool] = useState(false);
 
@@ -68,6 +69,7 @@ export function PickView() {
     onSuccess: (r) => {
       setEmptyPool(r.restaurant === null);
       setResult(r.restaurant);
+      setSignatureMenu(r.signatureMenu);
       setLogId(r.logId);
       if (r.restaurant) setSeen((prev) => [...prev, r.restaurant!.id]);
     },
@@ -209,6 +211,7 @@ export function PickView() {
         {showResult && result && (
           <Result
             restaurant={result}
+            signatureMenu={signatureMenu}
             onAccept={() => void accept()}
             onAgain={() => void again()}
           />
@@ -287,10 +290,12 @@ function Shuffling() {
 
 function Result({
   restaurant: r,
+  signatureMenu,
   onAccept,
   onAgain,
 }: {
   restaurant: NearbyRestaurant;
+  signatureMenu: string | null;
   onAccept: () => void;
   onAgain: () => void;
 }) {
@@ -300,6 +305,10 @@ function Result({
     <div className="flex flex-col gap-3 rounded-lg border border-brand-600 p-4">
       <div className="flex flex-col gap-1">
         <span className="text-display">{r.name}</span>
+        {/* 대표메뉴 (SPEC §4.2 결과 카드). 없으면 줄 자체를 안 그린다 */}
+        {signatureMenu && (
+          <span className="text-subtitle text-brand-700">{signatureMenu}</span>
+        )}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-caption text-muted-foreground">
             {r.category}

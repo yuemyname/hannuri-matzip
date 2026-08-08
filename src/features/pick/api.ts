@@ -4,6 +4,7 @@ import { getSupabase } from "@/lib/supabase/client";
 import { ensureSession } from "@/lib/supabase/session";
 import { isCategory, type Category } from "@/lib/categories";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
+import { fetchSignatureMenu } from "@/features/restaurants/menu-api";
 
 export type MealType = "lunch" | "dinner";
 
@@ -24,6 +25,8 @@ export type PickResult = {
   restaurant: NearbyRestaurant | null;
   /** 추천 로그 id. [여기로]/[다시] 를 누르면 이 행을 업데이트한다 (SPEC §2.3) */
   logId: string | null;
+  /** 결과 카드에 쓸 대표메뉴 (SPEC §4.2). 없으면 null — 카드는 없어도 멀쩡해야 한다 */
+  signatureMenu: string | null;
 };
 
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v));
@@ -59,7 +62,7 @@ function toRestaurant(row: unknown): NearbyRestaurant | null {
  */
 export async function pickRestaurant(p: PickParams): Promise<PickResult> {
   const supabase = getSupabase();
-  if (!supabase) return { restaurant: null, logId: null };
+  if (!supabase) return { restaurant: null, logId: null, signatureMenu: null };
   const session = await ensureSession();
   const userId = session?.user.id ?? null;
 
@@ -78,20 +81,29 @@ export async function pickRestaurant(p: PickParams): Promise<PickResult> {
   const rows: unknown = data;
   const first = Array.isArray(rows) ? rows[0] : null;
   const restaurant = toRestaurant(first);
-  if (!restaurant || !userId) return { restaurant, logId: null };
+  if (!restaurant)
+    return { restaurant: null, logId: null, signatureMenu: null };
 
-  const { data: log } = await supabase
-    .from("recommendation_logs")
-    .insert({
-      user_id: userId,
-      restaurant_id: restaurant.id,
-      meal_type: p.mealType,
-      accepted: null,
-    })
-    .select("id")
-    .single();
+  // 대표메뉴는 RPC 가 안 준다 (restaurants_within 과 같은 컬럼이라서).
+  // 로그 기록과 함께 병렬로 가져온다 — 어차피 셔플 1.2초 뒤에 화면에 뜬다.
+  const [signatureMenu, log] = await Promise.all([
+    fetchSignatureMenu(restaurant.id),
+    userId
+      ? supabase
+          .from("recommendation_logs")
+          .insert({
+            user_id: userId,
+            restaurant_id: restaurant.id,
+            meal_type: p.mealType,
+            accepted: null,
+          })
+          .select("id")
+          .single()
+          .then((r) => r.data as { id: string } | null)
+      : Promise.resolve(null),
+  ]);
 
-  return { restaurant, logId: (log as { id: string } | null)?.id ?? null };
+  return { restaurant, logId: log?.id ?? null, signatureMenu };
 }
 
 /** [여기로 갈게요] = true, [다시 뽑기] = false (WBS 4.4) */

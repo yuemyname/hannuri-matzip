@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { signedPhotoUrls } from "@/features/reviews/api";
 import { ReviewForm } from "@/features/reviews/review-form";
+import { MenuEditor } from "./menu-editor";
 import { useCurrentUserId, useRestaurantDetail } from "./use-detail";
 import { PRICE_LABEL } from "./sort";
 import type { RestaurantDetail, Review } from "./detail-api";
@@ -21,6 +22,7 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const { data, isPending, isError, refetch } = useRestaurantDetail(id);
   const { data: userId } = useCurrentUserId();
   const [writing, setWriting] = useState(false);
+  const [editingMenus, setEditingMenus] = useState(false);
 
   if (isError) {
     return (
@@ -80,9 +82,27 @@ export function RestaurantDetailView({ id }: { id: string }) {
         )}
       </section>
 
-      {data.menus.length > 0 && (
-        <section className="flex flex-col gap-2">
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
           <h4 className="text-label font-medium">메뉴</h4>
+          {!editingMenus && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditingMenus(true)}
+            >
+              {data.menus.length > 0 ? "메뉴 고치기" : "메뉴 추가"}
+            </Button>
+          )}
+        </div>
+
+        {editingMenus ? (
+          <MenuEditor
+            restaurantId={id}
+            menus={data.menus}
+            onDone={() => setEditingMenus(false)}
+          />
+        ) : data.menus.length > 0 ? (
           <ul className="flex flex-col gap-1.5">
             {data.menus.map((m) => (
               <li key={m.id} className="flex items-center gap-2">
@@ -96,8 +116,13 @@ export function RestaurantDetailView({ id }: { id: string }) {
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        ) : (
+          // 빈 상태는 행동 유도 (CLAUDE.md)
+          <p className="text-caption text-muted-foreground">
+            아직 메뉴가 없어요. 가보셨다면 하나 채워 주세요
+          </p>
+        )}
+      </section>
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
