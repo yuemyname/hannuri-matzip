@@ -1,46 +1,47 @@
 "use client";
 
+import Link from "next/link";
 import { CategoryChip } from "@/components/category-chip";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { CATEGORIES, type Category } from "@/lib/categories";
 import { RADIUS_OPTIONS } from "@/features/map/config";
-import { SORTS, type SortKey } from "./sort";
 
 /**
- * 반경 토글 + 정렬 + 카테고리 칩 (SPEC §4.1).
+ * 지도 아래 컨트롤 바 — 반경 토글 + 카테고리 토글(복수 선택) (SPEC §4.1).
  *
- * 반경 토글은 1.3 에서 지도 위에 띄웠던 것을 여기로 옮겼다 — SPEC 의 레이아웃이
- * 필터바 자리에 두고 있고, 지도 위에 겹쳐 두면 마커를 가린다.
+ * 리스트가 없어졌으므로 **조회 상태를 알리는 것도 여기 몫이다.** 예전에는
+ * 로딩·에러·빈 결과를 리스트가 맡았는데, 그게 사라진 자리에 아무 말도 없으면
+ * "마커가 없다"와 "못 불러왔다"를 구분할 방법이 없다.
+ *
+ * 정렬 드롭다운은 뺐다. 정렬은 리스트 순서를 정하는 것이었고, 지도 위 마커에는
+ * 순서가 없다.
  */
 export function FilterBar({
   radius,
   radiusReady,
   onRadiusChange,
-  sort,
-  onSortChange,
   categories,
   onToggleCategory,
   onClearCategories,
+  count,
+  isLoading,
+  isError,
+  onRetry,
 }: {
   radius: number;
   /** 저장된 반경 복원 전에는 아무것도 눌린 걸로 보이지 않게 한다. 잘못된 값이
    *  잠깐 눌려 있다가 바뀌면 사용자가 자기가 안 누른 변화를 보게 된다 */
   radiusReady: boolean;
   onRadiusChange: (m: number) => void;
-  sort: SortKey;
-  onSortChange: (s: SortKey) => void;
   categories: readonly Category[];
   onToggleCategory: (c: Category) => void;
   onClearCategories: () => void;
+  count: number;
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-b border-border bg-background px-3 py-2">
+    <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-background px-3 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       <div className="flex items-center justify-between gap-2">
         <div
           role="group"
@@ -64,28 +65,16 @@ export function FilterBar({
           ))}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            {/* 지금 무엇으로 정렬 중인지 버튼에 그대로 쓴다 */}
-            <Button variant="outline" size="sm">
-              {SORTS[sort]}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {(Object.keys(SORTS) as SortKey[]).map((key) => (
-              <DropdownMenuItem key={key} onSelect={() => onSortChange(key)}>
-                {/* 선택 표시. 색이 아니라 글자로 알린다 */}
-                <span className="w-4 shrink-0" aria-hidden="true">
-                  {sort === key ? "✓" : ""}
-                </span>
-                {SORTS[key]}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Status
+          count={count}
+          isLoading={isLoading}
+          isError={isError}
+          hasFilters={categories.length > 0}
+          onRetry={onRetry}
+        />
       </div>
 
-      {/* 칩은 가로 스크롤. 360px 에서 줄바꿈으로 필터바가 세로로 부풀지 않게 한다.
+      {/* 칩은 가로 스크롤. 360px 에서 줄바꿈으로 바가 세로로 부풀면 지도를 먹는다.
           -mx/px 로 스크롤 영역만 화면 끝까지 늘려 잘린 느낌을 없앤다. */}
       <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-0.5">
         <button
@@ -110,5 +99,72 @@ export function FilterBar({
         ))}
       </div>
     </div>
+  );
+}
+
+/** 리스트가 맡던 로딩·에러·빈 결과 안내. 한 줄로 줄여 바 안에 둔다 */
+function Status({
+  count,
+  isLoading,
+  isError,
+  hasFilters,
+  onRetry,
+}: {
+  count: number;
+  isLoading: boolean;
+  isError: boolean;
+  hasFilters: boolean;
+  onRetry: () => void;
+}) {
+  if (isError) {
+    return (
+      <p role="alert" className="flex items-center gap-2 text-caption">
+        {/* 사과하지 않고 다음 행동을 알려준다 (CLAUDE.md) */}
+        <span className="text-muted-foreground">맛집을 불러오지 못했어요</span>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="shrink-0 rounded-chip px-2 py-0.5 font-medium text-brand-700 hover:bg-accent"
+        >
+          다시 시도
+        </button>
+      </p>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <p role="status" className="text-caption text-muted-foreground">
+        불러오는 중
+      </p>
+    );
+  }
+
+  if (count === 0) {
+    return (
+      <p role="status" className="flex items-center gap-2 text-caption">
+        <span className="text-muted-foreground">
+          {hasFilters
+            ? "고른 종류에는 없어요"
+            : "이 반경에는 아직 등록된 곳이 없어요"}
+        </span>
+        {/* 빈 상태는 행동 유도 (CLAUDE.md). 종류를 좁혀서 빈 거면 등록이 답이 아니다 */}
+        {!hasFilters && (
+          <Link
+            href="/restaurants/new"
+            className="shrink-0 font-medium text-brand-700"
+          >
+            맛집 등록하기
+          </Link>
+        )}
+      </p>
+    );
+  }
+
+  // 마커 개수를 글자로도 적는다. 지도만 보면 겹친 마커를 셀 수 없다.
+  return (
+    <p role="status" className="tnum text-caption text-muted-foreground">
+      {count}곳
+    </p>
   );
 }

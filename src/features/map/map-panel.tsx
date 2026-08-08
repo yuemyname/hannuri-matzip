@@ -12,8 +12,8 @@ import { usePinMode } from "@/features/restaurants/pin-store";
  * 지도 + 위치 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
  * 카메라의 정본은 zustand 스토어다 — 풀페이지 fallback 을 다녀와도 뷰가 유지된다.
  *
- * 조회와 필터는 `MainView` 가 들고 있다. 지도와 리스트가 같은 배열을 봐야
- * 마커 수와 항목 수가 어긋나지 않는다. 반경 토글도 필터바로 옮겼다 (SPEC §4.1).
+ * 조회와 필터는 `MainView` 가 들고 있다. 마커는 그 결과 배열을 그대로 그리므로
+ * 카테고리 토글이 곧 마커 필터가 된다. 반경 토글은 하단 바에 있다 (SPEC §4.1).
  */
 export function MapPanel({
   position,
@@ -70,8 +70,7 @@ export function MapPanel({
   const handleSelect = (id: string) => onSelect(id, "map");
 
   // 카메라는 **앱 밖에서 고른 경우에만** 옮긴다 (점메추 [여기로 갈게요], WBS 4.4).
-  // 마커를 눌렀을 때 옮기면 방금 누른 것으로 지도가 튀고,
-  // 리스트 카드를 훑을 때 옮기면 마우스만 지나가도 지도가 계속 움직인다 (WBS 2.5).
+  // 마커를 눌렀을 때 옮기면 방금 누른 것으로 지도가 튄다 (WBS 2.5).
   useEffect(() => {
     if (selectionSource !== null || !selectedId) return;
     const hit = restaurants.find((r) => r.id === selectedId);
@@ -118,7 +117,8 @@ export function MapPanel({
       )}
 
       {/* 배너는 지도 위에 겹친다. 지도 조작을 막지 않도록 바깥은 클릭을 통과시킨다.
-          조회 실패·빈 결과 안내는 리스트가 맡는다 — 같은 말을 두 군데서 하지 않는다. */}
+          여기는 **위치** 문제만 말한다. 조회 실패·빈 결과는 하단 바가 맡는다 —
+          같은 말을 두 군데서 하지 않는다. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-3">
         <Notice
           status={status}

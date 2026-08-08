@@ -36,6 +36,14 @@ export default function RootLayout({
               한누리 맛집
             </Link>
             <nav className="flex items-center gap-1">
+              {/* 리스트를 없애면서 빈 상태에 있던 [맛집 등록하기] 도 같이 사라졌다.
+                  등록은 조건과 무관하게 늘 열려 있어야 하는 길이라 헤더로 올린다. */}
+              <Link
+                href="/restaurants/new"
+                className="rounded-chip px-3 py-1.5 text-label hover:bg-muted"
+              >
+                등록
+              </Link>
               <Link
                 href="/pick"
                 className="rounded-chip px-3 py-1.5 text-label hover:bg-muted"

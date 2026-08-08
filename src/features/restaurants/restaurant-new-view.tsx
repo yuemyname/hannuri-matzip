@@ -17,7 +17,7 @@ import {
   DuplicateRestaurantError,
   type NewMenu,
 } from "./create";
-import { PRICE_LABEL } from "./sort";
+import { PRICE_LABEL } from "./price";
 
 /**
  * 맛집 등록 (SPEC §4.4 / SHELL.md §4). 3단계다.

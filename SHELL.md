@@ -5,7 +5,7 @@
 
 ## 0. 결정
 
-메인 화면(지도 + 리스트)은 앱이 살아있는 동안 **언마운트되지 않는다.**
+메인 화면(지도 + 하단 컨트롤 바)은 앱이 살아있는 동안 **언마운트되지 않는다.**
 나머지 화면은 그 위에 모달로 뜬다.
 
 이유:
@@ -21,20 +21,22 @@
 ```
 src/app/
   layout.tsx                      # 헤더 + @modal 슬롯 렌더
-  page.tsx                        # 메인 — 지도 + 필터바 + 리스트 시트
+  page.tsx                        # 메인 — 지도 + 하단 컨트롤 바
   @modal/
     default.tsx                   # export default function () { return null }
     (.)pick/page.tsx              # 점메추
     (.)restaurants/new/page.tsx   # 등록
     (.)restaurants/[id]/page.tsx  # 상세
     (.)me/page.tsx                # 마이
+    (.)welcome/page.tsx           # 첫 사용자 안내 3스텝
   pick/page.tsx                   # ↓ 아래 4개는 풀페이지 fallback
   restaurants/new/page.tsx        #   직접 진입 / 새로고침 / 슬랙 링크 클릭 시
   restaurants/[id]/page.tsx
   me/page.tsx
+  welcome/page.tsx
 ```
 
-로그인 화면이 없으므로(익명 세션) 풀페이지는 fallback 4개뿐이다.
+로그인 화면이 없으므로(익명 세션) 풀페이지는 fallback 5개뿐이다.
 
 `(.)` = 같은 레벨 인터셉트. `@modal/default.tsx`가 없으면 새로고침 시 404가 난다.
 
@@ -78,7 +80,7 @@ export default async function Page({ params }) {
 - 예외: 파괴적 동작 확인(리뷰 삭제)은 `AlertDialog` 허용.
 
 **배경 상태**
-- 모달이 열리면 리스트 드래그 시트는 collapsed로 내린다.
+- 리스트 드래그 시트는 없다 (2026-08-08 제거, SPEC §4.1). 메인은 지도 한 장이다.
 - 배경 지도는 계속 렌더되지만 **인터랙션은 막는다** (`inert` 또는 pointer-events-none).
 - body 스크롤 락은 Radix가 처리한다. 직접 `overflow:hidden` 붙이지 말 것.
 

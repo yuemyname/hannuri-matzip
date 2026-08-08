@@ -13,7 +13,7 @@ import { CATEGORIES, type Category } from "@/lib/categories";
 import { RADIUS_OPTIONS } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView } from "@/features/map/map-store";
-import { PRICE_LABEL } from "@/features/restaurants/sort";
+import { PRICE_LABEL } from "@/features/restaurants/price";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import {
   answerPick,
