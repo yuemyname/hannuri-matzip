@@ -25,7 +25,11 @@ export const DEFAULT_ZOOM = 16;
 
 /** 반경 토글 (SPEC §4.1). 100m 넘게 걸어가서 먹는 일이 없다는 판단으로 200m 가 상한 */
 export const RADIUS_OPTIONS = [30, 50, 100, 200] as const;
-export const DEFAULT_RADIUS = 50;
+/**
+ * 처음 들어온 사람이 보는 반경. 넓은 쪽에서 시작해 좁히는 게 낫다 —
+ * 좁게 시작하면 "등록된 곳이 없어요" 만 보고 나가는 사람이 생긴다.
+ */
+export const DEFAULT_RADIUS = 200;
 
 /**
  * fitBounds 여백(px). 없으면 반경 원이 화면 끝에 딱 붙어서 원으로 안 보이고
