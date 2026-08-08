@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { MapPanel } from "@/features/map/map-panel";
 import { useCurrentPosition } from "@/features/map/use-current-position";
-import { useMapView } from "@/features/map/map-store";
+import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
 import type { Category } from "@/lib/categories";
 import { useNearby } from "./use-nearby";
 import { sortRestaurants, DEFAULT_SORT, type SortKey } from "./sort";
@@ -88,6 +88,9 @@ export function MainView() {
     [setSelectedId],
   );
 
+  // 저장된 반경이 복원되기 전에 조회하면 50m 로 한 번 받고 200m 로 또 받는다.
+  const hydrated = useMapViewHydrated();
+
   const [sort, setSort] = useState<SortKey>(DEFAULT_SORT);
   const [categories, setCategories] = useState<Category[]>([]);
   // 모바일 드래그 시트. 접힘(지도 40dvh) / 펼침(지도 16dvh) 두 단만 둔다.
@@ -96,7 +99,9 @@ export function MainView() {
 
   // 카테고리는 서버가 거른다 — 반경 밖까지 훑을 이유가 없고 RPC 가 이미 받는다.
   // 정렬은 클라이언트다. 서버에 다시 다녀오면 리스트가 비었다 채워진다.
-  const query = useNearby(position.center, radius, { categories });
+  const query = useNearby(hydrated ? position.center : null, radius, {
+    categories,
+  });
   const restaurants = useMemo(
     () => sortRestaurants(query.data ?? [], sort),
     [query.data, sort],
@@ -147,6 +152,7 @@ export function MainView() {
         <div className="sticky top-0 z-[var(--z-header)] shrink-0">
           <FilterBar
             radius={radius}
+            radiusReady={hydrated}
             onRadiusChange={setRadius}
             sort={sort}
             onSortChange={setSort}

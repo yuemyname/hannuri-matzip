@@ -20,6 +20,7 @@ import { SORTS, type SortKey } from "./sort";
  */
 export function FilterBar({
   radius,
+  radiusReady,
   onRadiusChange,
   sort,
   onSortChange,
@@ -28,6 +29,9 @@ export function FilterBar({
   onClearCategories,
 }: {
   radius: number;
+  /** 저장된 반경 복원 전에는 아무것도 눌린 걸로 보이지 않게 한다. 잘못된 값이
+   *  잠깐 눌려 있다가 바뀌면 사용자가 자기가 안 누른 변화를 보게 된다 */
+  radiusReady: boolean;
   onRadiusChange: (m: number) => void;
   sort: SortKey;
   onSortChange: (s: SortKey) => void;
@@ -47,10 +51,10 @@ export function FilterBar({
             <button
               key={m}
               type="button"
-              aria-pressed={radius === m}
+              aria-pressed={radiusReady && radius === m}
               onClick={() => onRadiusChange(m)}
               className={`tnum rounded-chip px-2.5 py-1 text-label ${
-                radius === m
+                radiusReady && radius === m
                   ? "bg-primary text-primary-foreground"
                   : "text-foreground hover:bg-muted"
               }`}

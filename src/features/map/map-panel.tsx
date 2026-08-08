@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MapView } from "./map-view";
 import type { useCurrentPosition } from "./use-current-position";
-import { useMapView, type LatLng } from "./map-store";
+import { useMapView, useMapViewHydrated, type LatLng } from "./map-store";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import type { SelectSource } from "@/features/restaurants/select-source";
 import { usePinMode } from "@/features/restaurants/pin-store";
@@ -45,10 +45,9 @@ export function MapPanel({
   // 이 지도를 그대로 쓴다.
   const pinning = usePinMode((s) => s.active);
 
-  // skipHydration 이라 마운트 후 직접 복원한다.
-  useEffect(() => {
-    void useMapView.persist.rehydrate();
-  }, []);
+  // 복원이 끝나야 지도를 만든다. 안 그러면 기본값(50m)으로 한 번 만들어졌다가
+  // 복원 직후 200m 로 fitBounds 가 다시 돌아 카메라가 튄다.
+  const hydrated = useMapViewHydrated();
 
   // 카메라를 옮길지 말지. 저장된 뷰가 있으면 위치를 얻어도 함부로 옮기지 않는다 —
   // 그러면 돌아올 때마다 내 위치로 튕겨서 복원이 무의미해진다.
@@ -81,18 +80,27 @@ export function MapPanel({
 
   return (
     <div className="relative size-full">
-      <MapView
-        initialCenter={center ?? geoCenter}
-        initialZoom={zoom}
-        focus={focus}
-        anchor={geoCenter}
-        me={coords}
-        radius={radius}
-        restaurants={restaurants}
-        selectedId={selectedId}
-        onSelect={handleSelect}
-        onViewChange={setView}
-      />
+      {hydrated ? (
+        <MapView
+          initialCenter={center ?? geoCenter}
+          initialZoom={zoom}
+          focus={focus}
+          anchor={geoCenter}
+          me={coords}
+          radius={radius}
+          restaurants={restaurants}
+          selectedId={selectedId}
+          onSelect={handleSelect}
+          onViewChange={setView}
+        />
+      ) : (
+        // 한 프레임짜리 자리. dynamic() 로딩 표시와 같은 모습이라 티가 안 난다.
+        <div className="flex size-full items-center justify-center bg-muted">
+          <span className="text-caption text-muted-foreground">
+            지도 불러오는 중
+          </span>
+        </div>
+      )}
 
       {/* 핀 조정 중에는 지도 정중앙에 핀을 고정한다. 핀을 끄는 게 아니라 지도를
           움직인다 — 모바일에서 작은 핀을 손가락으로 끄는 것보다 정확하다 (SHELL.md §4). */}

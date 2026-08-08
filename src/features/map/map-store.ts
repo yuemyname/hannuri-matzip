@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFAULT_RADIUS } from "./config";
@@ -46,3 +47,37 @@ export const useMapView = create<MapViewState>()(
     },
   ),
 );
+
+/**
+ * 저장된 뷰 복원이 끝났는지.
+ *
+ * `skipHydration` 이라 첫 렌더는 항상 기본값(반경 50m, 줌 없음)이다. 그 상태로
+ * 지도를 만들어 버리면 복원 직후 반경이 50 → 200 으로 바뀌면서 `fitBounds` 가
+ * 한 번 더 돌아 카메라가 눈에 띄게 튄다. **복원이 끝난 뒤에 지도를 만든다.**
+ *
+ * sessionStorage 는 동기라 한 프레임이면 끝난다 — 네트워크를 기다리는 게 아니다.
+ */
+export function useMapViewHydrated() {
+  // 서버에서는 항상 false 로 시작한다. sessionStorage 가 없는 환경에서는 zustand 가
+  // `persist` API 자체를 안 붙이기 때문에, 여기서 `useMapView.persist` 를 건드리면
+  // 프리렌더가 죽는다. 접근은 전부 이펙트 안(=브라우저)에서만 한다.
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const persist = useMapView.persist;
+    if (!persist) {
+      // 저장소를 못 쓰는 브라우저(사파리 프라이빗 등). 복원할 게 없으니 그냥 진행한다.
+      setHydrated(true);
+      return;
+    }
+    if (persist.hasHydrated()) {
+      setHydrated(true);
+      return;
+    }
+    const done = persist.onFinishHydration(() => setHydrated(true));
+    void persist.rehydrate();
+    return done;
+  }, []);
+
+  return hydrated;
+}
