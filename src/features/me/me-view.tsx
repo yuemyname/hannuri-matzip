@@ -57,6 +57,11 @@ export function MeView() {
         새 사용자가 되고 지금 기록은 따라오지 않아요
       </p>
 
+      {/* 첫 안내는 한 번만 뜨고 사라진다. 다시 볼 길을 하나 남긴다 (WBS 6.4) */}
+      <Link href="/welcome" className="text-caption text-brand-700">
+        앱 사용법 다시 보기
+      </Link>
+
       <Section title="내 리뷰" count={data.reviews.length}>
         {data.reviews.length === 0 ? (
           <EmptyLine

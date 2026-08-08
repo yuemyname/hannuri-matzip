@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 /**
  * layout 자체가 죽었을 때의 마지막 그물 (WBS 6.1).
  * 여기는 `html`/`body` 를 직접 그려야 한다 — layout 이 안 돌기 때문이다.
@@ -13,6 +15,11 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // 화면에는 안 띄우되 원인은 남긴다. 여기까지 왔으면 로그가 유일한 단서다.
+  useEffect(() => {
+    console.error("global error", error.digest, error);
+  }, [error]);
+
   return (
     <html lang="ko">
       <body>

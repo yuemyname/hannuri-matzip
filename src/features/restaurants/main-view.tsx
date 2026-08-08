@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { MapPanel } from "@/features/map/map-panel";
+import { hasSeenWelcome } from "@/features/onboarding/seen";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
 import type { Category } from "@/lib/categories";
@@ -63,7 +65,28 @@ function useSheetDrag(setExpanded: (v: boolean) => void) {
   );
 }
 
+/**
+ * 처음 온 사람에게 안내를 한 번 띄운다 (WBS 6.4).
+ *
+ * `useState` 로 여는 오버레이가 아니라 라우팅이다 — 앱의 다른 화면과 같은 규칙을
+ * 쓴다 (SHELL.md). `push` 라서 닫기(`router.back()`)가 메인으로 돌아온다.
+ *
+ * `localStorage` 는 서버에 없으므로 이펙트 안에서만 읽는다. 여기서 판단하면
+ * 하이드레이션 불일치도 안 난다 — 첫 렌더 결과는 양쪽이 같다.
+ */
+function useFirstRunWelcome() {
+  const router = useRouter();
+  // 이펙트가 두 번 돌아도(StrictMode·리마운트) 히스토리에 /welcome 이 두 번
+  // 쌓이지는 않는다 — 같은 URL 로의 push 는 라우터가 합친다. reactStrictMode 를
+  // 켜고 확인했고, 그래서 여기 잠금을 두지 않는다.
+  useEffect(() => {
+    if (hasSeenWelcome()) return;
+    router.push("/welcome");
+  }, [router]);
+}
+
 export function MainView() {
+  useFirstRunWelcome();
   const position = useCurrentPosition();
   const radius = useMapView((s) => s.radius);
   const selectedId = useMapView((s) => s.selectedId);
