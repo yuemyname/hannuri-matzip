@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,18 @@ export function ReviewForm({
   const [rating, setRating] = useState(existing?.rating ?? 0);
   const [comment, setComment] = useState(existing?.comment ?? "");
   const [visitedOn, setVisitedOn] = useState(existing?.visitedOn ?? "");
+
+  // 새 리뷰의 방문일 기본값은 오늘. 대부분 다녀와서 바로 쓴다.
+  //
+  // 마운트 후에 넣는다 — 서버에서 초기값으로 넣으면 서버 시계(UTC)와 브라우저 시계가
+  // 달라 하이드레이션이 어긋난다. 날짜는 반드시 브라우저 기준이어야 한다.
+  //
+  // **수정할 때는 건드리지 않는다.** 비워 둔 건 비워 둔 대로 뜻이 있고,
+  // 저장을 누르는 순간 오늘로 바뀌면 사용자가 안 한 변경이 된다.
+  useEffect(() => {
+    if (existing) return;
+    setVisitedOn(todayLocal());
+  }, [existing]);
   const [files, setFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState<{
     done: number;
@@ -176,4 +188,15 @@ export function ReviewForm({
       </div>
     </form>
   );
+}
+
+/**
+ * `<input type="date">` 가 받는 `YYYY-MM-DD`. **로컬 기준이다.**
+ * `toISOString()` 은 UTC 로 바꿔서 밤 9시 이후에 하루 앞선 날짜가 나온다 —
+ * 저녁 먹고 쓴 리뷰가 내일 날짜로 찍힌다.
+ */
+function todayLocal() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
