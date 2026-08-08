@@ -220,22 +220,31 @@ function ReviewItem({ review, isMine }: { review: Review; isMine?: boolean }) {
         isMine ? "border-brand-600 bg-accent" : "border-border"
       }`}
     >
+      {/* 1줄: 누가 · 몇 점 */}
       <div className="flex items-center gap-2">
         <span className="min-w-0 truncate text-label font-medium">
           {review.displayName}
         </span>
         {isMine && <Badge variant="brand">내 리뷰</Badge>}
-        {review.visitedOn && (
-          <span className="tnum ml-auto text-caption text-muted-foreground">
-            {review.visitedOn} 방문
-          </span>
-        )}
+        <span className="ml-auto shrink-0">
+          <Rating value={review.rating} />
+        </span>
       </div>
 
-      <Rating value={review.rating} />
-
-      {review.comment && (
-        <p className="whitespace-pre-wrap">{review.comment}</p>
+      {/* 2줄: 무슨 말 · 언제 갔는지.
+          날짜는 `ml-auto` 로 민다 — 코멘트가 없을 때도 오른쪽에 있어야
+          윗줄의 별점과 세로로 맞는다. justify-between 이면 왼쪽으로 붙는다. */}
+      {(review.comment || review.visitedOn) && (
+        <div className="flex items-baseline gap-2">
+          {review.comment && (
+            <p className="min-w-0 whitespace-pre-wrap">{review.comment}</p>
+          )}
+          {review.visitedOn && (
+            <span className="tnum ml-auto shrink-0 text-caption text-muted-foreground">
+              {review.visitedOn} 방문
+            </span>
+          )}
+        </div>
       )}
 
       {urls && urls.length > 0 && (
