@@ -177,11 +177,15 @@ function Notice({
         <span className="flex flex-col">
           <span>현재 위치를 사용할 수 없어 사무실 기준으로 표시 중</span>
           {/* 브라우저가 프롬프트조차 안 띄우고 거절하는 경우가 있다.
-              iOS 는 설정 › 개인정보 보호 › 위치 서비스 › Safari 웹사이트가 꺼져 있거나,
-              이 사이트를 한 번 거부해두면 그렇게 된다. 다음 행동을 알려준다. */}
+              **iPhone 은 고칠 자리가 브라우저가 아니라 iOS 설정 앱이다.**
+              "브라우저 설정" 이라고만 적어 두면 사파리 안을 아무리 뒤져도 못 찾는다
+              (맥 사파리는 되는데 아이폰만 안 되는 게 대부분 이 경우다).
+              그래서 여기서만 기기를 나눠 길을 그대로 적어 준다. */}
           {status === "denied" && (
             <span className="text-caption text-muted-foreground">
-              브라우저 설정에서 이 사이트의 위치 권한을 허용해 주세요
+              {isIOS()
+                ? "설정 › 개인정보 보호 및 보안 › 위치 서비스 › Safari 웹사이트를 켜고, 사파리 주소창의 ᴀA › 웹사이트 설정에서 위치를 허용해 주세요"
+                : "브라우저 설정에서 이 사이트의 위치 권한을 허용해 주세요"}
             </span>
           )}
         </span>
@@ -195,6 +199,18 @@ function Notice({
   }
 
   return null;
+}
+
+/**
+ * iOS 기기인지. **안내 문구를 고르는 데만 쓴다** — 기능 분기에 쓰지 않는다.
+ *
+ * iPadOS 13+ 는 자기를 Mac 으로 소개해서 여기 안 걸린다. 그 경우 일반 문구가
+ * 나가는데, 틀린 말은 아니라서 그냥 둔다. UA 로 기능을 가르면 이런 예외가
+ * 곧바로 버그가 되지만, 문구는 아니다.
+ */
+function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent);
 }
 
 function Bubble({ children }: { children: React.ReactNode }) {

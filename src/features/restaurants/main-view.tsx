@@ -95,7 +95,12 @@ export function MainView() {
   return (
     // 지도가 화면을 통째로 쓴다. 컨트롤·카드는 그 위에 떠 있다.
     <main className="relative min-h-0 flex-1">
-      <div className="absolute inset-0">
+      {/* **`z-map` 은 값이 0이라도 반드시 있어야 한다.** 네이버 SDK 가 지도 안에
+          로고·축척을 z-index 100 언저리로 얹는데, 여기에 z-index 가 없으면
+          그것들이 쌓임 맥락을 안 만들고 문서 최상위에서 경쟁해서 모달(z 50)
+          위로 뚫고 올라온다 — 안내 팝업 위에 "© NAVER Corp." 가 찍혔다.
+          여기서 쌓임 맥락을 만들어 지도의 내부 z-index 를 가둔다. */}
+      <div className="absolute inset-0 z-[var(--z-map)]">
         <MapPanel
           position={position}
           restaurants={restaurants}

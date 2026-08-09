@@ -47,6 +47,29 @@ export function Modal({
     };
   }, []);
 
+  // **핀 조정 단계에서 배경 지도를 만질 수 있게 body 잠금을 푼다 (SHELL.md §4).**
+  //
+  // Radix 의 modal 다이얼로그는 `body { pointer-events: none }` 을 걸어 모달 바깥을
+  // 통째로 막는다. 그래서 "지도를 움직여 핀에 맞추세요" 라고 적어 놓고 정작 지도가
+  // 손가락에 반응하지 않았다. 오버레이를 투명하게 해도 소용없다 —
+  // 막는 건 오버레이가 아니라 body 다.
+  //
+  // `Dialog.Root` 의 `modal` 을 끄는 게 정공법처럼 보이지만 쓸 수 없다. Radix 는
+  // modal / non-modal 에서 **다른 컴포넌트**(DialogContentModal / NonModal)를 쓰기
+  // 때문에, 값이 바뀌면 Content 가 리마운트되고 그 안의 등록 폼이 1단계로 초기화된다.
+  //
+  // Radix 는 레이어가 붙고 떨어질 때만 이 값을 쓴다. 그 사이에 우리가 덮어써도
+  // 다시 건드리지 않으므로, 핀 단계 동안만 풀었다가 되돌려 놓는다.
+  useEffect(() => {
+    if (!docked) return;
+    const body = document.body;
+    const locked = body.style.pointerEvents; // Radix 가 넣어 둔 "none"
+    body.style.pointerEvents = "auto";
+    return () => {
+      body.style.pointerEvents = locked;
+    };
+  }, [docked]);
+
   const close = () => router.back();
 
   // 아래로 드래그해서 닫기 (SHELL.md §2 모바일 닫기 경로).
@@ -85,8 +108,14 @@ export function Modal({
             오버레이를 껐다 켜면 Content 뒤에 다시 붙어서 모달 위를 덮는다.
             그러면 폼이 통째로 안 눌린다. 존재는 유지하고 스타일만 바꾼다. */}
         <Dialog.Overlay
+          // **인라인 style 이어야 한다.** Radix 는 오버레이에 `pointerEvents: "auto"` 를
+          // 인라인으로 박는다. `pointer-events-none` 클래스로는 못 이겨서, 투명한
+          // 오버레이가 지도 위 클릭을 전부 삼키고 있었다 — 핀 단계에서 지도가
+          // 안 움직이던 두 원인 중 하나다 (다른 하나는 body 잠금).
+          // Radix 가 자기 style 을 먼저 깔고 우리 style 을 뒤에 펼치므로 이게 이긴다.
+          style={docked ? { pointerEvents: "none" } : undefined}
           className={`fixed inset-0 z-[var(--z-modal)] ${
-            docked ? "pointer-events-none bg-transparent" : "bg-ink-900/40"
+            docked ? "bg-transparent" : "bg-ink-900/40"
           }`}
         />
 
