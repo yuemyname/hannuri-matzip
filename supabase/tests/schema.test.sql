@@ -15,8 +15,9 @@ begin
    where table_schema = 'public'
      and table_type = 'BASE TABLE'
      and table_name <> 'spatial_ref_sys';
-  if n <> 6 then
-    raise exception '앱 테이블 6개를 기대했는데 %개다', n;
+  -- categories 가 늘어 7개다 (2026-08-09, 종류 목록을 코드에서 DB 로 옮겼다).
+  if n <> 7 then
+    raise exception '앱 테이블 7개를 기대했는데 %개다', n;
   end if;
 end
 $$;
@@ -35,7 +36,8 @@ begin
   select string_agg(want, ', ') into missing
     from unnest(array['restaurants_location_idx',
                       'restaurants_name_loc_uniq',
-                      'reco_logs_user_created_idx']) as want
+                      'reco_logs_user_created_idx',
+                      'restaurants_category_idx']) as want
    where not exists (
      select 1 from pg_indexes where schemaname = 'public' and indexname = want
    );
@@ -67,9 +69,9 @@ insert into restaurants(name, category, location, price_range, created_by)
           '11111111-1111-1111-1111-111111111111');
 
 -- ── 2. 제약 ──────────────────────────────────────────────────────────
--- category: 목록 밖의 값과 공백 섞인 오타가 조용히 들어가면 안 된다.
--- 들어가는 순간 SPEC §3.1 의 category = any(...) 매칭이 실패해
--- 그 맛집이 필터·점메추에서 에러 없이 사라진다.
+-- category: 목록에 없는 값이 조용히 들어가면 안 된다. 들어가는 순간 SPEC §3.1 의
+-- category = any(...) 매칭이 실패해 그 맛집이 필터·점메추에서 에러 없이 사라진다.
+-- 2026-08-09 부터 붙박이 check 가 아니라 categories 를 가리키는 **외래키**다.
 do $$
 begin
   begin
@@ -77,7 +79,7 @@ begin
       values ('오타집', '한식 ', st_makepoint(126.979, 37.567)::geography,
               '11111111-1111-1111-1111-111111111111');
     raise exception 'category 뒤 공백(''한식 '')이 거부되지 않았다';
-  exception when check_violation then null;
+  exception when foreign_key_violation then null;
   end;
 
   begin
@@ -85,8 +87,55 @@ begin
       values ('커피집', '커피', st_makepoint(126.979, 37.567)::geography,
               '11111111-1111-1111-1111-111111111111');
     raise exception '목록에 없는 category(''커피'')가 거부되지 않았다';
-  exception when check_violation then null;
+  exception when foreign_key_violation then null;
   end;
+end
+$$;
+
+-- categories 이름 규칙 — 폼(categoryError)과 같은 뜻이어야 한다.
+-- 갈라지면 폼은 통과시키는데 저장이 실패한다.
+do $$
+declare bad text;
+begin
+  foreach bad in array array['한식1', '아시안!', ' 한식', '한식 ', '한  식', '']
+  loop
+    begin
+      insert into categories(name) values (bad);
+      raise exception '못 쓰는 이름 %s 가 거부되지 않았다', quote_literal(bad);
+    exception when check_violation then null;
+    end;
+  end loop;
+
+  -- 낱말 사이 공백 한 칸과 영문은 통과해야 한다.
+  insert into categories(name) values ('아시안 요리'), ('Brunch Cafe');
+end
+$$;
+
+-- 이름을 고치면 붙어 있던 맛집이 따라온다 (on update cascade).
+-- 관리자 화면이 이걸 그대로 쓴다 — 안 따라오면 이름 하나 고치다 맛집이 사라진다.
+do $$
+declare n int;
+begin
+  insert into categories(name) values ('임시종류');
+  insert into restaurants(name, category, location, created_by)
+    values ('이름바뀔집', '임시종류', st_makepoint(126.979, 37.567)::geography,
+            '11111111-1111-1111-1111-111111111111');
+
+  update categories set name = '바뀐종류' where name = '임시종류';
+  select count(*) into n from restaurants where name = '이름바뀔집' and category = '바뀐종류';
+  if n <> 1 then
+    raise exception '종류 이름을 고쳤는데 맛집이 안 따라왔다 (on update cascade 없음)';
+  end if;
+
+  -- 쓰이는 중인 종류는 못 지운다 (on delete restrict). 지우려면 먼저 옮겨야 한다.
+  begin
+    delete from categories where name = '바뀐종류';
+    raise exception '쓰이는 중인 종류가 지워졌다 (on delete restrict 없음)';
+  exception when foreign_key_violation then null;
+  end;
+
+  delete from restaurants where name = '이름바뀔집';
+  delete from categories where name = '바뀐종류';
 end
 $$;
 
@@ -463,6 +512,66 @@ begin
     raise exception E'GiST 인덱스를 안 탄다 (Seq Scan). 실행 계획:\n%', plan;
   end if;
   raise notice 'restaurants_within 실행 계획에 restaurants_location_idx 사용 확인';
+end
+$$;
+
+-- ── 6.5 restaurants_in_bounds RPC (화면에 보이는 영역) ────────────────
+do $$
+begin
+  if to_regprocedure('restaurants_in_bounds(double precision, double precision, double precision, double precision, text[], integer)') is null then
+    raise exception 'restaurants_in_bounds 함수가 없다';
+  end if;
+end
+$$;
+
+do $$
+declare n int; ids text;
+begin
+  -- 사각형 안쪽만 나와야 한다. 반경 원과 달리 모서리까지 포함이다.
+  select count(*) into n
+    from restaurants_in_bounds(37.5660, 126.9770, 37.5670, 126.9790) w
+   where w.name in ('김밥천국', '베이글로드');
+  if n = 0 then
+    raise exception '사각형 안의 맛집이 안 나온다';
+  end if;
+
+  -- 밖은 안 나온다.
+  select count(*) into n
+    from restaurants_in_bounds(37.9000, 127.9000, 37.9100, 127.9100) w;
+  if n <> 0 then
+    raise exception '사각형 밖인데 %건 나왔다', n;
+  end if;
+
+  -- 카테고리 필터
+  select string_agg(w.category, ',') into ids
+    from restaurants_in_bounds(37.5000, 126.9000, 37.6000, 127.1000, array['중식']) w;
+  if ids is not null and ids <> repeat('중식', 1) and ids like '%한식%' then
+    raise exception '카테고리 필터가 안 걸린다: %', ids;
+  end if;
+
+  -- limit 은 잘리되 평점 높은 쪽부터 남는다.
+  select count(*) into n
+    from restaurants_in_bounds(37.0000, 126.0000, 38.0000, 128.0000, null, 3) w;
+  if n > 3 then
+    raise exception 'p_limit 3 인데 %건 왔다', n;
+  end if;
+end
+$$;
+
+do $$
+declare line text; plan text := '';
+begin
+  for line in
+    execute 'explain (analyze, costs off) select * from restaurants_in_bounds(37.5660, 126.9770, 37.5670, 126.9790)'
+  loop
+    plan := plan || line || E'\n';
+  end loop;
+
+  -- `&&` + st_makeenvelope 라 GiST 를 타야 한다. st_within 으로 쓰면 못 탄다.
+  if plan not like '%restaurants_location_idx%' then
+    raise exception E'restaurants_in_bounds 가 GiST 인덱스를 안 탄다. 실행 계획:\n%', plan;
+  end if;
+  raise notice 'restaurants_in_bounds 실행 계획에 restaurants_location_idx 사용 확인';
 end
 $$;
 

@@ -7,7 +7,7 @@
 -- 이제 목록이 데이터다. 등록 폼에서 새 이름을 직접 넣으면 여기 한 줄이 생기고,
 -- 관리자 화면이 이름을 고치거나 지운다.
 
-create table categories (
+create table if not exists categories (
   name       text primary key,
   -- 화면에 보이는 순서. 값 사이를 비워 둬서 나중에 사이에 끼워 넣을 수 있다.
   -- 직접 입력으로 생긴 것은 기본값(100)이라 씨앗 7개 뒤, 「기타」 앞에 선다.
@@ -27,22 +27,36 @@ insert into categories (name, sort_order) values
   ('한식', 10), ('중식', 20), ('일식', 30), ('양식', 40),
   ('분식', 50), ('카페', 60),
   -- 「기타」는 항상 맨 뒤. 직접 입력으로 생긴 것들보다도 뒤에 둔다.
-  ('기타', 900);
+  ('기타', 900)
+on conflict (name) do nothing;
+
+-- 이미 등록된 맛집이 쓰던 종류가 씨앗 밖에 있으면 외래키가 걸린다. 먼저 채운다.
+insert into categories (name)
+select distinct r.category from restaurants r
+ where not exists (select 1 from categories c where c.name = r.category)
+on conflict (name) do nothing;
 
 -- restaurants.category: 붙박이 check → 이 표를 가리키는 외래키.
 --   on update cascade — 관리자가 이름을 고치면 붙어 있던 맛집이 따라온다
 --   on delete restrict — 쓰이는 중인 종류는 못 지운다. 지우려면 먼저 옮겨야 한다
-alter table restaurants drop constraint restaurants_category_check;
+-- 제약 이름은 init 마이그레이션이 인라인 check 로 만들어 준 기본값이다.
+-- 손으로 고친 DB 에서 이름이 다를 수 있으니 없으면 그냥 지나간다.
+alter table restaurants drop constraint if exists restaurants_category_check;
 alter table restaurants
+  drop constraint if exists restaurants_category_fkey,
   add constraint restaurants_category_fkey
   foreign key (category) references categories(name)
   on update cascade on delete restrict;
 
 -- 외래키 검사와 "이 종류에 몇 곳" 집계가 같은 인덱스를 쓴다.
-create index restaurants_category_idx on restaurants (category);
+create index if not exists restaurants_category_idx on restaurants (category);
 
 -- ── RLS (SPEC §2.3 과 같은 규칙) ──────────────────────────────────────
 alter table categories enable row level security;
+
+-- 다시 돌려도 깨지지 않게. create policy 는 if not exists 를 안 받는다.
+drop policy if exists categories_select on categories;
+drop policy if exists categories_insert on categories;
 
 -- 목록은 세션이 있으면 누구나 본다. 필터칩·등록 폼이 이걸 읽는다.
 create policy categories_select on categories
