@@ -10,6 +10,8 @@ import {
   readToken,
 } from "./config";
 import {
+  clusterIconHtml,
+  CLUSTER_SIZE,
   MARKER_SIZE,
   markerIconHtml,
   markerIconKey,
@@ -32,6 +34,14 @@ function icon(
   };
 }
 
+/** 숫자 원의 아이콘. 좌표 위에 원 가운데가 오게 앵커를 잡는다 */
+function clusterIcon(count: number): naver.maps.HtmlIcon {
+  return {
+    content: clusterIconHtml(count),
+    anchor: new naver.maps.Point(CLUSTER_SIZE.width / 2, CLUSTER_SIZE.height / 2),
+  };
+}
+
 const MESSAGE: Record<Exclude<Status, "loading" | "ready">, string> = {
   "no-key":
     "지도 키가 없어요. NEXT_PUBLIC_NAVER_MAP_CLIENT_ID를 설정해 주세요.",
@@ -50,9 +60,11 @@ export default function NaverMap({
   initialZoom,
   focus,
   me,
-  restaurants,
+  clusters,
+  zoomTo,
   selectedId,
   onSelect,
+  onZoomInto,
   onViewChange,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,6 +97,8 @@ export default function NaverMap({
   // 마커 클릭 리스너도 마커마다 한 번만 붙는다. 같은 이유로 ref 를 거친다.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onZoomIntoRef = useRef(onZoomInto);
+  onZoomIntoRef.current = onZoomInto;
   const [status, setStatus] = useState<Status>(
     NAVER_MAP_CLIENT_ID ? "loading" : "no-key",
   );
@@ -165,6 +179,14 @@ export default function NaverMap({
     });
   }, [status]);
 
+  // 숫자 원을 눌러 확대해 들어간다. nonce 로만 반응해서 같은 줌을 두 번 눌러도 통한다.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (status !== "ready" || !map || !zoomTo) return;
+    map.setZoom(zoomTo.zoom, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, zoomTo?.nonce]);
+
   // focus 가 바뀔 때만 옮긴다. 저장된 뷰로 복원한 뒤 위치가 도착했다고 해서
   // 멋대로 튕기면 안 되기 때문에, 옮길지 말지는 MapPanel 이 정한다.
   useEffect(() => {
@@ -243,31 +265,38 @@ export default function NaverMap({
 
   // 맛집 마커 — diff 갱신. 전부 setMap(null) 후 재생성하면 필터를 바꿀 때마다
   // 지도가 통째로 깜빡인다 (CLAUDE.md, WBS 2.3 DoD).
+  //
+  // 그리는 단위는 맛집이 아니라 **클러스터**다. 한 칸에 여럿이면 숫자 원 하나가
+  // 되고, 하나면 그 맛집의 마커가 된다 — 그래서 핀 수가 격자 칸 수를 못 넘는다.
   useEffect(() => {
     const map = mapRef.current;
     if (status !== "ready" || !map) return;
 
-    const alive = new Set(restaurants.map((r) => r.id));
+    const alive = new Set(clusters.map((c) => c.key));
 
     // 1) 사라진 것만 지운다
-    for (const [id, entry] of markersRef.current) {
-      if (alive.has(id)) continue;
+    for (const [key, entry] of markersRef.current) {
+      if (alive.has(key)) continue;
       naver.maps.Event.clearInstanceListeners(entry.marker);
       entry.marker.setMap(null);
-      markersRef.current.delete(id);
+      markersRef.current.delete(key);
     }
 
     // 2) 남은 것은 바뀐 부분만 손댄다
-    for (const r of restaurants) {
-      const selected = r.id === selectedId;
-      const iconKey = markerIconKey(r, selected);
-      const zIndex = selected ? 60 : 50;
-      const existing = markersRef.current.get(r.id);
+    for (const c of clusters) {
+      const one = c.items.length === 1 ? c.items[0] : null;
+      const selected = one !== null && one.id === selectedId;
+      const iconKey = one
+        ? markerIconKey(one, selected)
+        : `cluster:${c.items.length}`;
+      // 숫자 원이 마커를 가리면 그 아래 한 곳을 못 누른다. 원을 아래에 둔다.
+      const zIndex = one ? (selected ? 60 : 50) : 40;
+      const existing = markersRef.current.get(c.key);
 
       if (existing) {
         // 별점·선택 상태가 그대로면 DOM 을 건드리지 않는다
         if (existing.iconKey !== iconKey) {
-          existing.marker.setIcon(icon(r, selected));
+          existing.marker.setIcon(one ? icon(one, selected) : clusterIcon(c.items.length));
           existing.iconKey = iconKey;
         }
         existing.marker.setZIndex(zIndex);
@@ -276,18 +305,20 @@ export default function NaverMap({
 
       const marker = new naver.maps.Marker({
         map,
-        position: new naver.maps.LatLng(r.lat, r.lng),
-        title: r.name,
-        icon: icon(r, selected),
+        position: new naver.maps.LatLng(c.lat, c.lng),
+        title: one ? one.name : `${c.items.length}곳`,
+        icon: one ? icon(one, selected) : clusterIcon(c.items.length),
         zIndex,
       });
       // 아이콘 안의 button 을 키보드로 눌러도 여기로 온다 (click 이 버블한다)
-      naver.maps.Event.addListener(marker, "click", () =>
-        onSelectRef.current(r.id),
-      );
-      markersRef.current.set(r.id, { marker, iconKey });
+      naver.maps.Event.addListener(marker, "click", () => {
+        if (one) onSelectRef.current(one.id);
+        // 숫자 원은 고르는 게 아니라 **여는** 것이다. 확대하면 갈라진다.
+        else onZoomIntoRef.current({ lat: c.lat, lng: c.lng });
+      });
+      markersRef.current.set(c.key, { marker, iconKey });
     }
-  }, [status, restaurants, selectedId]);
+  }, [status, clusters, selectedId]);
 
   return (
     <div className="relative size-full">

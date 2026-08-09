@@ -46,6 +46,27 @@ export function markerIconHtml(r: NearbyRestaurant, selected: boolean) {
   );
 }
 
+/**
+ * 여러 곳이 한 칸에 겹쳤을 때 뜨는 숫자 원.
+ *
+ * 이름을 안 쓴다 — 대표를 하나 고르면 나머지가 그 뒤에 숨은 것처럼 보이는데,
+ * 여기 의미는 "이 근처에 N곳" 이지 "대표는 어디" 가 아니다. 누르면 확대해서 갈라진다.
+ */
+export function clusterIconHtml(count: number) {
+  return (
+    `<button type="button" class="${CLUSTER}" ` +
+    `aria-label="이 근처 ${count}곳, 확대해서 보기">` +
+    `<span class="tnum">${count}</span></button>`
+  );
+}
+
+/** 숫자 원의 크기. 마커보다 작지 않아야 손가락으로 누를 수 있다 */
+export const CLUSTER_SIZE = { width: 36, height: 36 };
+
+const CLUSTER =
+  "flex h-9 w-9 items-center justify-center rounded-chip border border-transparent " +
+  "bg-primary text-label font-medium text-primary-foreground shadow-marker";
+
 /** 맛집 이름은 사용자가 넣는다. 그대로 붙이면 마커가 주입 지점이 된다. */
 function escapeHtml(s: string) {
   return s

@@ -231,7 +231,7 @@ function Status({
   if (truncated) {
     return (
       <p role="status" className={`${pill} text-muted-foreground`}>
-        너무 많아서 일부만 보여요 · 확대해 보세요
+        이 근처가 너무 넓어요 · 확대해 보세요
       </p>
     );
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { NearbyRestaurant } from "@/features/restaurants/api";
+import type { Cluster } from "./cluster";
 import type { Coords } from "./use-current-position";
 import type { Bounds, LatLng } from "./map-store";
 
@@ -29,9 +29,14 @@ export type MapViewProps = {
   /** 여기로 옮기라는 신호. 값이 바뀔 때만 panTo 한다 */
   focus: LatLng | null;
   me: Coords | null;
-  restaurants: NearbyRestaurant[];
+  /** 그릴 단위. 한 칸에 여럿이면 숫자 원 하나가 된다 (cluster.ts) */
+  clusters: Cluster[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** 숫자 원을 눌렀을 때 — 그리로 확대해 들어간다 */
+  onZoomInto: (center: LatLng) => void;
+  /** 이 줌으로 가라는 신호. nonce 가 바뀔 때만 적용한다 (같은 값 두 번도 통하게) */
+  zoomTo: { zoom: number; nonce: number } | null;
   /** 이동·줌이 끝날 때. bounds 가 곧 조회 범위다 (못 읽으면 null) */
   onViewChange: (center: LatLng, zoom: number, bounds: Bounds | null) => void;
 };

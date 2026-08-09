@@ -7,7 +7,7 @@ import { MapPanel } from "@/features/map/map-panel";
 import { hasSeenWelcome } from "@/features/onboarding/seen";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
-import { MAX_MARKERS, MIN_QUERY_ZOOM } from "@/features/map/config";
+import { FETCH_LIMIT, MIN_QUERY_ZOOM } from "@/features/map/config";
 import { metersBetween } from "@/features/map/geo";
 import type { Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
@@ -185,7 +185,9 @@ export function MainView() {
 
   // 상한보다 한 건 더 받아 온다. 넘쳤으면 잘라서 그리되 **조용히 자르지 않는다** —
   // 화면이 알려 주지 않으면 "이게 전부" 로 읽힌다.
-  const truncated = !tooWide && (query.data?.length ?? 0) > MAX_MARKERS;
+  // (핀 개수 상한은 여기가 아니라 클러스터링이 맡는다. 받은 건 다 그려진다 —
+  //  하나씩이 아니라 숫자 원으로 묶여서.)
+  const truncated = !tooWide && (query.data?.length ?? 0) > FETCH_LIMIT;
 
   // 서버가 준 `distance_m` 은 **조회 기준점에서의 거리**다. 지도를 옮기면 그게
   // 화면 한복판 기준이 되어 버려서, 걸어갈 거리를 묻는 사람에게 거짓말이 된다.
@@ -193,7 +195,7 @@ export function MainView() {
   const me = position.center;
   const all = useMemo(
     () =>
-      (tooWide ? [] : (query.data ?? []).slice(0, MAX_MARKERS)).map((r) => ({
+      (tooWide ? [] : (query.data ?? []).slice(0, FETCH_LIMIT)).map((r) => ({
         ...r,
         distanceM: Math.round(metersBetween(me, { lat: r.lat, lng: r.lng })),
       })),

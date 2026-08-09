@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapView } from "./map-view";
 import type { useCurrentPosition } from "./use-current-position";
 import { useMapView, useMapViewHydrated, type LatLng } from "./map-store";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import type { SelectSource } from "@/features/restaurants/select-source";
 import { usePinMode } from "@/features/restaurants/pin-store";
+import { clusterByGrid } from "./cluster";
+import { DEFAULT_ZOOM, MAX_ZOOM, ZOOM_INTO_STEP } from "./config";
 
 /**
  * 지도 + 위치 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
@@ -40,6 +42,21 @@ export function MapPanel({
   const center = useMapView((s) => s.center);
   const zoom = useMapView((s) => s.zoom);
   const setView = useMapView((s) => s.setView);
+  const bounds = useMapView((s) => s.bounds);
+
+  // 겹친 것을 숫자 원으로 합친다. 격자 칸 수가 곧 핀 상한이라, 아무것도 버리지
+  // 않으면서 한 화면에 뜨는 핀 개수가 고정된다 (cluster.ts).
+  const clusters = useMemo(
+    () => clusterByGrid(restaurants, bounds),
+    [restaurants, bounds],
+  );
+
+  // 숫자 원을 누르면 그리로 확대해 들어간다. 확대가 곧 갈라짐이다.
+  // 값이 아니라 "이 값으로 가라" 는 신호라, 같은 줌을 두 번 눌러도 통하도록
+  // 카운터를 함께 올린다 — 값만 보면 두 번째 클릭이 무시된다.
+  const [zoomTo, setZoomTo] = useState<{ zoom: number; nonce: number } | null>(
+    null,
+  );
   // 등록 화면의 핀 조정 단계 (SHELL.md §4). 모달 안에 지도를 새로 만들지 않고
   // 이 지도를 그대로 쓴다.
   const pinning = usePinMode((s) => s.active);
@@ -70,6 +87,17 @@ export function MapPanel({
   };
 
   const handleSelect = (id: string) => onSelect(id, "map");
+
+  const zoomInto = useCallback(
+    (to: LatLng) => {
+      setFocus(to);
+      setZoomTo((prev) => ({
+        zoom: Math.min((zoom ?? DEFAULT_ZOOM) + ZOOM_INTO_STEP, MAX_ZOOM),
+        nonce: (prev?.nonce ?? 0) + 1,
+      }));
+    },
+    [zoom],
+  );
 
   // 등록의 핀 단계로 들어오면 검색한 가게 좌표로 한 번 옮긴다.
   // **안 옮기면 핀이 내가 보던 자리에 찍힌다** — 그러면 미세조정이 아니라
@@ -111,9 +139,11 @@ export function MapPanel({
           initialZoom={zoom}
           focus={focus}
           me={coords}
-          restaurants={restaurants}
+          clusters={clusters}
+          zoomTo={zoomTo}
           selectedId={selectedId}
           onSelect={handleSelect}
+          onZoomInto={zoomInto}
           onViewChange={setView}
         />
       ) : (
