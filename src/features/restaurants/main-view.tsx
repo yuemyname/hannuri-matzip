@@ -48,15 +48,94 @@ function useFirstRunWelcome() {
   }, [router]);
 }
 
-/**
- * 지도 위 액션 알약. **셋의 크기를 맞춘다** — 폭까지 고정해서 세로로 쌓았을 때
- * 오른쪽 변이 한 줄로 떨어지게 한다. 글자 수가 달라도(2·3·4자) 자리가 안 흔들린다.
- * 색만 다르다: 주 액션(점메추)이 브랜드색, 나머지는 흰 알약.
- */
+/** 펼쳤을 때 뜨는 항목. 셋의 크기를 맞춰 오른쪽 변이 한 줄로 떨어지게 한다 */
 const ACTION =
-  "inline-flex w-20 shrink-0 items-center justify-center rounded-chip border px-3 py-2 text-label shadow-pop";
-const ACTION_SUB = `${ACTION} border-border bg-background hover:bg-muted`;
-const ACTION_MAIN = `${ACTION} border-transparent bg-primary text-primary-foreground hover:bg-brand-700`;
+  "inline-flex w-24 shrink-0 items-center justify-center rounded-chip border border-border bg-background px-3 py-2 text-label shadow-pop hover:bg-muted";
+
+const MENU = [
+  { href: "/pick", label: "점메추" },
+  { href: "/restaurants/new", label: "식당 등록" },
+  { href: "/me", label: "MY" },
+] as const;
+
+/**
+ * 지도 오른쪽 위 액션 버튼 — 평소엔 [+] 하나, 누르면 셋이 펼쳐진다.
+ *
+ * 메뉴(`role="menu"`)가 아니라 **접었다 펴는 링크 묶음**이다. 세 항목이 전부
+ * "다른 화면으로 간다" 라서 명령이 아니라 이동이고, 그래서 그냥 `a` 로 둔다 —
+ * 메뉴로 만들면 링크가 `menuitem` 이 되어 스크린리더가 "링크" 라고 안 읽는다.
+ *
+ * 그래서 Esc·바깥 클릭은 직접 처리한다. 여는 장치가 하나뿐이라 이 정도면 된다.
+ */
+function MapActions() {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      // Esc 로 닫았으면 포커스를 열었던 버튼으로 되돌린다. 안 그러면
+      // 사라진 링크에 포커스가 남아 다음 Tab 이 문서 맨 앞으로 튄다.
+      toggleRef.current?.focus();
+    };
+    // 바깥을 누르면 닫는다. click 이 아니라 pointerdown 이라야 지도를 끌기
+    // 시작하는 순간 닫힌다 — click 이면 드래그가 끝날 때까지 메뉴가 떠 있다.
+    const onDown = (e: PointerEvent) => {
+      if (rootRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={rootRef}
+      className="pointer-events-none absolute top-3 right-3 z-[var(--z-filterbar)] flex flex-col items-end gap-2"
+    >
+      <button
+        ref={toggleRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls="map-actions"
+        // 글자가 기호라 이름을 따로 준다. "+" 만으로는 무엇이 열리는지 모른다.
+        aria-label={open ? "메뉴 닫기" : "메뉴 열기"}
+        onClick={() => setOpen((v) => !v)}
+        className="pointer-events-auto inline-flex size-12 items-center justify-center rounded-chip bg-primary text-title leading-none font-medium text-primary-foreground shadow-pop hover:bg-brand-700"
+      >
+        <span aria-hidden="true">{open ? "✕" : "+"}</span>
+      </button>
+
+      {/* 접혀 있을 때는 DOM 에서 아예 뺀다. `hidden` 으로 두면 Tab 이 안 보이는
+          링크를 지나간다 — 눈에는 안 보이는데 포커스만 사라진 것처럼 보인다. */}
+      {open && (
+        <nav
+          id="map-actions"
+          aria-label="바로가기"
+          className="flex flex-col items-end gap-2"
+        >
+          {MENU.map((m) => (
+            <Link
+              key={m.href}
+              href={m.href}
+              onClick={() => setOpen(false)}
+              className={`${ACTION} pointer-events-auto`}
+            >
+              {m.label}
+            </Link>
+          ))}
+        </nav>
+      )}
+    </div>
+  );
+}
 
 export function MainView() {
   useFirstRunWelcome();
@@ -141,29 +220,8 @@ export function MainView() {
       </div>
 
       {/* 오른쪽 위 = 무엇을 할지. 아래(필터·카드)와 층을 나눈다.
-          위쪽은 지도에서 잘 안 쓰는 자리라 액션을 둬도 지도를 덜 가린다.
-          아이콘 대신 글자를 쓴다. 앱 전체가 글자 기반이라 여기만 아이콘을
-          들이면 "이게 뭐지" 하는 버튼이 생긴다.
-
-          **감싸는 층은 포인터 이벤트를 받지 않는다** — 받으면 지도 위쪽을
-          손가락으로 끌 수 없게 된다. 실제 링크만 켠다. */}
-      <nav
-        aria-label="바로가기"
-        className="pointer-events-none absolute top-3 right-3 z-[var(--z-filterbar)] flex flex-col items-end gap-2"
-      >
-        <Link href="/pick" className={`${ACTION_MAIN} pointer-events-auto`}>
-          점메추
-        </Link>
-        <Link
-          href="/restaurants/new"
-          className={`${ACTION_SUB} pointer-events-auto`}
-        >
-          + 등록
-        </Link>
-        <Link href="/me" className={`${ACTION_SUB} pointer-events-auto`}>
-          내 정보
-        </Link>
-      </nav>
+          평소에는 [+] 하나만 떠 있어서 지도를 거의 안 가린다. */}
+      <MapActions />
 
       {/* 지도 아래에 뜨는 것들. 아래에서부터 컨트롤 → 고른 곳 카드 순으로 쌓인다.
           여기도 감싸는 층은 포인터 이벤트를 안 받는다. */}
