@@ -59,7 +59,7 @@ export function MapControls({
       <div
         role="group"
         aria-label="반경"
-        className="pointer-events-auto flex gap-1 self-start rounded-chip border border-border bg-background p-1 shadow-pop"
+        className="pointer-events-auto flex gap-1 self-center rounded-chip border border-border bg-background p-1 shadow-pop"
       >
         {RADIUS_OPTIONS.map((m) => (
           <button
@@ -80,29 +80,35 @@ export function MapControls({
 
       {/* 칩은 가로 스크롤. 360px 에서 줄바꿈으로 부풀면 지도를 그만큼 덮는다.
           -mx/px 로 스크롤 영역만 화면 끝까지 늘려 잘린 느낌을 없앤다.
-          이 줄은 스크롤을 받아야 해서 포인터 이벤트를 켠다. */}
-      <div className="pointer-events-auto -mx-3 flex gap-2 overflow-x-auto px-3 pb-1">
-        <button
-          type="button"
-          aria-pressed={categories.length === 0}
-          onClick={onClearCategories}
-          className={`inline-flex shrink-0 items-center rounded-chip px-3 py-1.5 text-label shadow-pop ${
-            categories.length === 0
-              ? "bg-primary text-primary-foreground"
-              : "border border-border bg-background text-foreground hover:bg-muted"
-          }`}
-        >
-          전체
-        </button>
-        {CATEGORIES.map((c) => (
-          <CategoryChip
-            key={c}
-            category={c}
-            selected={categories.includes(c)}
-            onToggle={onToggleCategory}
-            className="shadow-pop"
-          />
-        ))}
+          이 줄은 스크롤을 받아야 해서 포인터 이벤트를 켠다.
+
+          가운데 정렬은 안쪽 `w-max mx-auto` 로 한다. 스크롤 컨테이너에
+          `justify-center` 를 걸면 **넘칠 때 왼쪽이 잘려 나가고 스크롤로도 못 닿는다.**
+          w-max 는 다 들어가면 가운데, 넘치면 왼쪽부터 정상 스크롤이다. */}
+      <div className="pointer-events-auto -mx-3 overflow-x-auto px-3 pb-1">
+        <div className="mx-auto flex w-max gap-2">
+          <button
+            type="button"
+            aria-pressed={categories.length === 0}
+            onClick={onClearCategories}
+            className={`inline-flex shrink-0 items-center rounded-chip px-3 py-1.5 text-label shadow-pop ${
+              categories.length === 0
+                ? "bg-primary text-primary-foreground"
+                : "border border-border bg-background text-foreground hover:bg-muted"
+            }`}
+          >
+            전체
+          </button>
+          {CATEGORIES.map((c) => (
+            <CategoryChip
+              key={c}
+              category={c}
+              selected={categories.includes(c)}
+              onToggle={onToggleCategory}
+              className="shadow-pop"
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -123,7 +129,7 @@ function Status({
   onRetry: () => void;
 }) {
   const pill =
-    "pointer-events-auto flex items-center gap-2 self-start rounded-chip border border-border bg-background px-3 py-1 text-caption shadow-pop";
+    "pointer-events-auto flex items-center gap-2 self-center rounded-chip border border-border bg-background px-3 py-1 text-caption shadow-pop";
 
   if (isError) {
     return (

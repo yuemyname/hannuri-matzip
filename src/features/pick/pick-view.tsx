@@ -80,6 +80,9 @@ export function PickView() {
   // **결과는 응답으로 이미 정해져 있다.** 셔플은 그 뒤에 도는 연출이다 (SPEC §3.2).
   const shuffling = useShuffle(pick.isSuccess ? pick.submittedAt : null);
   const showResult = pick.isSuccess && !shuffling;
+  // 뽑힌 곳이 화면에 있는지. 있으면 위 버튼이 [다시 뽑기] 가 된다.
+  // 후보가 0건이었을 때는 되뽑을 대상이 없으므로 [뽑아줘] 그대로다.
+  const hasResult = showResult && result !== null;
 
   const toggle = (c: Category) =>
     setCategories((p) =>
@@ -190,16 +193,21 @@ export function PickView() {
       </label>
 
       <div className="flex items-center gap-2">
-        {/* 결과 카드가 떠 있으면 여기 버튼은 감춘다. 카드 안에 [다시 뽑기] 가
-            이미 있어서, 같은 이름의 버튼이 화면에 둘이 되면 어느 쪽인지 헷갈린다. */}
-        {!(showResult && result) && (
-          <Button
-            onClick={() => pick.mutate()}
-            disabled={pick.isPending || shuffling}
-          >
-            {pick.isPending || shuffling ? "고르는 중" : "뽑아줘"}
-          </Button>
-        )}
+        {/* 결과가 떠 있어도 이 버튼은 계속 보인다. 자리를 옮기지 않고 이름만
+            바뀐다 — 조건을 고치고 바로 다시 뽑는 게 이 화면의 주 동작이라,
+            버튼이 사라졌다 나타나면 매번 눈으로 다시 찾아야 한다.
+            **[다시 뽑기] 는 여기 하나뿐이다.** 결과 카드 안에도 두면 같은 이름의
+            버튼이 둘이 되어 어느 쪽인지 헷갈린다. */}
+        <Button
+          onClick={() => (hasResult ? void again() : pick.mutate())}
+          disabled={pick.isPending || shuffling}
+        >
+          {pick.isPending || shuffling
+            ? "고르는 중"
+            : hasResult
+              ? "다시 뽑기"
+              : "뽑아줘"}
+        </Button>
         {seen.length > 0 && (
           <span className="tnum text-caption text-muted-foreground">
             {seen.length}번 뽑음
@@ -218,7 +226,6 @@ export function PickView() {
             restaurant={result}
             signatureMenu={signatureMenu}
             onAccept={() => void accept()}
-            onAgain={() => void again()}
           />
         )}
 
@@ -325,12 +332,10 @@ function Result({
   restaurant: r,
   signatureMenu,
   onAccept,
-  onAgain,
 }: {
   restaurant: NearbyRestaurant;
   signatureMenu: string | null;
   onAccept: () => void;
-  onAgain: () => void;
 }) {
   const price = r.priceRange === null ? null : PRICE_LABEL[r.priceRange];
 
@@ -374,11 +379,10 @@ function Result({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {/* 버튼은 실제로 일어나는 일을 쓴다 (CLAUDE.md) */}
+        {/* 버튼은 실제로 일어나는 일을 쓴다 (CLAUDE.md).
+            [다시 뽑기] 는 여기 두지 않는다 — 위의 버튼이 그 역할을 한다.
+            같은 이름이 화면에 둘이면 어느 쪽인지 헷갈린다. */}
         <Button onClick={onAccept}>여기로 갈게요</Button>
-        <Button variant="outline" onClick={onAgain}>
-          다시 뽑기
-        </Button>
         <Link
           href={`/restaurants/${r.id}`}
           className={buttonClass({

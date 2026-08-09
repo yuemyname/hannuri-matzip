@@ -146,6 +146,21 @@ function Notice({
     return <Bubble>위치 확인 중</Bubble>;
   }
 
+  // http 로 들어왔다. 다시 시도를 줘 봐야 결과가 같으므로 주지 않는다 —
+  // 할 일은 주소를 바꾸는 것 하나뿐이다.
+  if (status === "insecure") {
+    return (
+      <Bubble>
+        <span className="flex flex-col">
+          <span>사무실 기준으로 표시 중</span>
+          <span className="text-caption text-muted-foreground">
+            위치는 https 주소에서만 쓸 수 있어요. 배포된 주소로 열어 주세요
+          </span>
+        </span>
+      </Bubble>
+    );
+  }
+
   // 첫 진입. iOS Safari 때문에 자동 호출 대신 버튼으로 트리거한다 (SPEC §5)
   if (status === "idle") {
     return (

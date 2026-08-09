@@ -3,9 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FALLBACK_CENTER } from "./config";
 
-// SPEC §5. 상태 머신: idle → prompting → granted | denied | unavailable | timeout
+// SPEC §5. 상태 머신: idle → prompting → granted | denied | insecure | unavailable | timeout
+//
+// `insecure` 는 unavailable 에서 갈라 냈다. 둘은 사용자가 할 일이 완전히 다르다 —
+// unavailable 은 다시 눌러 볼 여지라도 있지만, http 로 들어왔으면 몇 번을 눌러도
+// 브라우저가 프롬프트조차 안 띄운다. 주소를 바꾸는 것 말고는 방법이 없다.
 export type PositionStatus =
-  "idle" | "prompting" | "granted" | "denied" | "unavailable" | "timeout";
+  | "idle"
+  | "prompting"
+  | "granted"
+  | "denied"
+  | "insecure"
+  | "unavailable"
+  | "timeout";
 
 export type Coords = { lat: number; lng: number; accuracy: number };
 
@@ -80,8 +90,12 @@ export function useCurrentPosition() {
       return;
     }
     // HTTPS 아니면 브라우저가 아예 거부한다 (localhost 는 예외). SPEC §5
+    //
+    // **실기기 테스트에서 제일 자주 걸리는 곳이다.** 폰에서 http://<맥 IP>:3000
+    // 으로 열면 여기서 끝나는데, 예전에는 "사용할 수 없음" 으로 뭉뚱그려서
+    // 원인을 알 방법이 없었다. 화면에 그대로 적어 준다.
     if (!window.isSecureContext) {
-      setStatus("unavailable");
+      setStatus("insecure");
       return;
     }
 
@@ -126,6 +140,13 @@ export function useCurrentPosition() {
     if (cached) {
       setCoords(cached);
       setStatus("granted");
+      return;
+    }
+
+    // http 로 들어왔으면 누르기 전에 알린다. [내 주변 찾기] 를 눌러 봐야
+    // 어차피 같은 결론인데, 그때까지 원인을 모른 채로 두지 않는다.
+    if (!window.isSecureContext) {
+      setStatus("insecure");
       return;
     }
 
