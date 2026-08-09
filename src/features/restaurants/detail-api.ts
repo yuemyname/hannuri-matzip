@@ -35,6 +35,8 @@ export type RestaurantDetail = {
   phone: string | null;
   memo: string | null;
   moodTags: Mood[];
+  reservable: boolean;
+  reservationUrl: string | null;
   naverPlaceUrl: string | null;
   menus: Menu[];
   reviews: Review[];
@@ -93,6 +95,7 @@ export async function fetchDetail(
     .from("restaurants")
     .select(
       `id, name, category, address, road_address, price_range, phone, memo, mood_tags,
+       reservable, reservation_url,
        naver_place_url, location,
        menus ( id, name, price, is_signature ),
        reviews ( id, user_id, rating, comment, visited_on, created_at,
@@ -145,6 +148,8 @@ export async function fetchDetail(
     phone: str(r.phone),
     memo: str(r.memo),
     moodTags: toMoods(r.mood_tags),
+    reservable: r.reservable === true,
+    reservationUrl: str(r.reservation_url),
     naverPlaceUrl: str(r.naver_place_url),
     menus,
     reviews,

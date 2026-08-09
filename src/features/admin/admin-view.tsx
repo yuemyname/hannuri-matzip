@@ -11,8 +11,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch";
 import { CATEGORY_MAX_LEN } from "@/lib/categories";
 import { MOODS, toMoods, type Mood } from "@/lib/moods";
+import {
+  normalizeReservationUrl,
+  reservationUrlError,
+  RESERVATION_URL_MAX_LEN,
+} from "@/lib/reservation";
 import {
   addCategory,
   adminLogin,
@@ -336,6 +342,11 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
   const [memo, setMemo] = useState(restaurant.memo ?? "");
   const initialMoods = toMoods(restaurant.mood_tags);
   const [moods, setMoods] = useState<Mood[]>(initialMoods);
+  const [reservable, setReservable] = useState(restaurant.reservable === true);
+  const [reservationUrl, setReservationUrl] = useState(
+    restaurant.reservation_url ?? "",
+  );
+  const reservationProblem = reservationUrlError(reservationUrl);
 
   const done = () => {
     void qc.invalidateQueries({ queryKey: ["admin", "restaurants"] });
@@ -345,7 +356,15 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
 
   const save = useMutation({
     mutationFn: () =>
-      patchRestaurant({ id: restaurant.id, name, category, memo, moodTags: moods }),
+      patchRestaurant({
+        id: restaurant.id,
+        name,
+        category,
+        memo,
+        moodTags: moods,
+        reservable,
+        reservationUrl: normalizeReservationUrl(reservationUrl),
+      }),
     onSuccess: done,
   });
   const remove = useMutation({
@@ -357,7 +376,9 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
     name !== restaurant.name ||
     category !== restaurant.category ||
     memo !== (restaurant.memo ?? "") ||
-    moods.join() !== initialMoods.join();
+    moods.join() !== initialMoods.join() ||
+    reservable !== (restaurant.reservable === true) ||
+    reservationUrl.trim() !== (restaurant.reservation_url ?? "");
 
   return (
     <div className={ROW}>
@@ -420,6 +441,35 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
         })}
       </div>
 
+      {/* 예약. 링크 칸은 켠 경우에만 — 안 받는 집에 빈 칸이 남아 있으면
+          "여기 왜 비어 있지" 를 계속 보게 된다. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Switch
+          id={`reservable-${restaurant.id}`}
+          checked={reservable}
+          onCheckedChange={(v) => setReservable(v === true)}
+        />
+        <label htmlFor={`reservable-${restaurant.id}`} className="text-label">
+          {reservable ? "예약 받음" : "예약 안 받음"}
+        </label>
+        {reservable && (
+          <Input
+            value={reservationUrl}
+            onChange={(e) => setReservationUrl(e.target.value)}
+            maxLength={RESERVATION_URL_MAX_LEN}
+            placeholder="https://booking.naver.com/..."
+            aria-label={`${restaurant.name} 예약 링크`}
+            aria-invalid={reservationProblem !== null}
+            className="min-w-0 flex-1"
+          />
+        )}
+      </div>
+      {reservable && reservationProblem && (
+        <p role="alert" className="text-caption text-danger">
+          {reservationProblem}
+        </p>
+      )}
+
       <Input
         value={memo}
         onChange={(e) => setMemo(e.target.value)}
@@ -436,7 +486,7 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
       <div className="flex gap-2">
         <Button
           size="sm"
-          disabled={!dirty || save.isPending}
+          disabled={!dirty || reservationProblem !== null || save.isPending}
           onClick={() => save.mutate()}
         >
           {save.isPending ? "저장 중" : "맛집 고치기"}

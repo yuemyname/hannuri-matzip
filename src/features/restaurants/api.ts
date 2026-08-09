@@ -24,6 +24,8 @@ export type NearbyRestaurant = {
    * 이 값을 안 준다. 지도 카드는 태그를 안 보여주므로 굳이 실어 나르지 않는다.
    */
   moodTags: Mood[];
+  /** 예약을 받는 곳인지. 카드에 한 줄 붙인다 (링크는 상세에서만 쓴다) */
+  reservable: boolean;
 };
 
 export type NearbyParams = {
@@ -68,6 +70,7 @@ function toRestaurant(row: unknown): NearbyRestaurant | null {
     avgRating: Number.isFinite(num(r.avg_rating)) ? num(r.avg_rating) : 0,
     reviewCount: Number.isFinite(num(r.review_count)) ? num(r.review_count) : 0,
     moodTags: toMoods(r.mood_tags),
+    reservable: r.reservable === true,
   };
 }
 

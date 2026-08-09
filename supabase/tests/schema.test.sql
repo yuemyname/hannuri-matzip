@@ -575,6 +575,59 @@ begin
 end
 $$;
 
+-- ── 6.6 예약 (2026-08-09) ─────────────────────────────────────────────
+-- 링크는 사람이 붙여넣는 값이라 그대로 anchor 의 href 가 된다. `javascript:` 가
+-- 들어가면 클릭 한 번에 스크립트가 돈다 — 화면에서도 거르지만 마지막 방어선은 DB다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+  bad text;
+begin
+  foreach bad in array array[
+    'javascript:alert(1)',
+    'data:text/html,<script>a</script>',
+    'ftp://example.com',
+    'example.com',
+    'http://예약 사이트'          -- 공백이 섞이면 뒤가 잘려 엉뚱한 데로 간다
+  ]
+  loop
+    begin
+      insert into restaurants(name, category, location, created_by, reservation_url)
+        values ('예약_나쁨', '한식', st_makepoint(126.979, 37.567)::geography, uid, bad);
+      raise exception '위험한 예약 링크 % 가 거부되지 않았다', quote_literal(bad);
+    exception when check_violation then null;
+    end;
+  end loop;
+
+  -- 정상 링크는 들어간다.
+  insert into restaurants(id, name, category, location, created_by, reservable, reservation_url)
+  values ('dddd0001-0000-0000-0000-000000000001', '예약_좋음', '한식',
+          st_makepoint(126.9791, 37.5671)::geography, uid, true,
+          'https://booking.naver.com/booking/13/bizes/1234');
+end
+$$;
+
+-- 전화로만 받는 집: 예약은 되는데 링크가 없다. 둘을 묶어 두면 이게 못 들어간다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+begin
+  insert into restaurants(name, category, location, created_by, reservable)
+  values ('예약_전화만', '한식', st_makepoint(126.9792, 37.5672)::geography, uid, true);
+end
+$$;
+
+-- 지도 조회가 예약 여부를 함께 준다 (카드에 "예약 가능" 을 적으려면 필요하다).
+do $$
+declare n int;
+begin
+  select count(*) into n
+    from restaurants_in_bounds(37.5660, 126.9770, 37.5690, 126.9800) w
+   where w.name = '예약_좋음' and w.reservable;
+  if n <> 1 then
+    raise exception 'restaurants_in_bounds 가 reservable 을 안 준다 (%건)', n;
+  end if;
+end
+$$;
+
 -- ── 7. 익명 세션 뒷받침 (SPEC §2.4) ──────────────────────────────────
 -- auth.users 에 행이 생기면 profiles 가 따라 생겨야 한다. 안 생기면
 -- 첫 리뷰 작성이 FK 위반으로 실패하는데, 사용자에겐 이유가 안 보인다.

@@ -8,6 +8,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { CategoryChip } from "@/components/category-chip";
 import { favoredAt } from "@/lib/moods";
+import { reservationUrlError } from "@/lib/reservation";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
 import type { Category } from "@/lib/categories";
@@ -56,6 +57,7 @@ export function PickView() {
   const [seen, setSeen] = useState<string[]>([]);
   const [result, setResult] = useState<NearbyRestaurant | null>(null);
   const [signatureMenu, setSignatureMenu] = useState<string | null>(null);
+  const [reservationUrl, setReservationUrl] = useState<string | null>(null);
   const [logId, setLogId] = useState<string | null>(null);
   const [emptyPool, setEmptyPool] = useState(false);
 
@@ -75,6 +77,7 @@ export function PickView() {
       setEmptyPool(r.restaurant === null);
       setResult(r.restaurant);
       setSignatureMenu(r.signatureMenu);
+      setReservationUrl(r.reservationUrl);
       setLogId(r.logId);
       if (r.restaurant) setSeen((prev) => [...prev, r.restaurant!.id]);
     },
@@ -231,6 +234,7 @@ export function PickView() {
           <Result
             restaurant={result}
             signatureMenu={signatureMenu}
+            reservationUrl={reservationUrl}
             meal={meal}
             onAccept={() => void accept()}
           />
@@ -345,14 +349,22 @@ function Shuffling({
 function Result({
   restaurant: r,
   signatureMenu,
+  reservationUrl,
   meal,
   onAccept,
 }: {
   restaurant: NearbyRestaurant;
   signatureMenu: string | null;
+  reservationUrl: string | null;
   meal: MealType;
   onAccept: () => void;
 }) {
+  // href 로 쓰기 전에 한 번 더 본다. DB 제약이 막고 있지만 그 앞에 들어간 값이
+  // 있을 수 있고, `javascript:` 가 통과하면 클릭 한 번에 스크립트가 돈다.
+  const bookingUrl =
+    reservationUrl && reservationUrlError(reservationUrl) === null
+      ? reservationUrl
+      : null;
   const price = r.priceRange === null ? null : PRICE_LABEL[r.priceRange];
 
   return (
@@ -409,6 +421,25 @@ function Result({
             [다시 뽑기] 는 여기 두지 않는다 — 위의 버튼이 그 역할을 한다.
             같은 이름이 화면에 둘이면 어느 쪽인지 헷갈린다. */}
         <Button onClick={onAccept}>여기로 갈게요</Button>
+        {/* 예약 링크가 있으면 여기서 바로 뛴다. 저녁·회식일수록 "가겠다" 다음
+            행동이 예약이라, 상세까지 한 번 더 들어가게 하지 않는다.
+            링크 없이 예약만 받는 곳은 글자로만 알린다 — 누를 데가 없는 버튼보다 낫다. */}
+        {bookingUrl ? (
+          <a
+            href={bookingUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className={buttonClass({ variant: "outline", size: "md" })}
+          >
+            예약하기
+          </a>
+        ) : (
+          r.reservable && (
+            <span className="text-caption text-muted-foreground">
+              예약 받는 곳이에요
+            </span>
+          )
+        )}
         <Link
           href={`/restaurants/${r.id}`}
           className={buttonClass({

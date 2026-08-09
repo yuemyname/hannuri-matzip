@@ -27,6 +27,8 @@ export type AdminRestaurant = {
   price_range: number | null;
   memo: string | null;
   mood_tags: string[] | null;
+  reservable: boolean;
+  reservation_url: string | null;
 };
 
 export type AdminCategory = {
@@ -96,6 +98,8 @@ export const patchRestaurant = (body: {
   priceRange?: number | null;
   memo?: string | null;
   moodTags?: string[];
+  reservable?: boolean;
+  reservationUrl?: string | null;
 }) => call<{ ok: true }>("restaurants", { method: "PATCH", body });
 export const deleteRestaurant = (id: string) =>
   call<{ ok: true }>("restaurants", { method: "DELETE", body: { id } });

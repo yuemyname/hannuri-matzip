@@ -50,6 +50,14 @@ export function RestaurantCard({
             </span>
           </>
         )}
+        {/* 예약 여부만 알린다. 링크는 안 싣는다 — 카드에서 바로 예약으로 뛰는
+            동선이 없고, 목록마다 URL 을 나르면 응답만 커진다. */}
+        {r.reservable && (
+          <>
+            <Dot />
+            <span className="text-caption text-brand-700">예약 가능</span>
+          </>
+        )}
       </div>
 
       <Rating value={r.avgRating} count={r.reviewCount} />

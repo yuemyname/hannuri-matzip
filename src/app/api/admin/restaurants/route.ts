@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { isMood, type Mood } from "@/lib/moods";
+import {
+  normalizeReservationUrl,
+  reservationUrlError,
+} from "@/lib/reservation";
 import { badRequest, guard, readBody } from "../guard";
 
 export const runtime = "nodejs";
@@ -12,7 +16,9 @@ export async function GET() {
 
   const { data, error } = await g.supabase
     .from("restaurants")
-    .select("id, name, category, road_address, price_range, memo, mood_tags, created_at")
+    .select(
+      "id, name, category, road_address, price_range, memo, mood_tags, reservable, reservation_url, created_at",
+    )
     .order("created_at", { ascending: false })
     .limit(PAGE);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -58,6 +64,21 @@ export async function PATCH(request: Request) {
       return badRequest("모르는 상황 태그예요");
     // 같은 값이 두 번 들어가도 DB 제약은 통과하지만, 화면에 두 번 뜬다.
     patch.mood_tags = [...new Set(body.moodTags as Mood[])];
+  }
+  if (body.reservable !== undefined) {
+    if (typeof body.reservable !== "boolean")
+      return badRequest("예약 여부가 올바르지 않아요");
+    patch.reservable = body.reservable;
+  }
+  if (body.reservationUrl !== undefined) {
+    if (body.reservationUrl !== null && typeof body.reservationUrl !== "string")
+      return badRequest("예약 링크 형식이 올바르지 않아요");
+    const raw = typeof body.reservationUrl === "string" ? body.reservationUrl : "";
+    // 화면과 **같은 규칙**으로 본다. 여기가 갈라지면 관리자 화면은 통과시키는데
+    // DB 제약이 거부하고, 이유는 "500" 으로만 보인다.
+    const problem = reservationUrlError(raw);
+    if (problem) return badRequest(problem);
+    patch.reservation_url = normalizeReservationUrl(raw);
   }
   if (body.memo !== undefined) {
     if (body.memo !== null && typeof body.memo !== "string")

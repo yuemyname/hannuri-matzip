@@ -31,6 +31,12 @@ import {
 } from "./create";
 import { PRICE_LABEL } from "./price";
 import { MOODS, type Mood } from "@/lib/moods";
+import {
+  reservationUrlError,
+  normalizeReservationUrl,
+  RESERVATION_URL_MAX_LEN,
+} from "@/lib/reservation";
+import { Switch } from "@/components/ui/switch";
 
 /**
  * 맛집 등록 (SPEC §4.4 / SHELL.md §4). 3단계다.
@@ -69,6 +75,9 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   const categoryList = useCategories();
   const [priceRange, setPriceRange] = useState<number | null>(null);
   const [memo, setMemo] = useState("");
+  // 예약 (2026-08-09). 두 값을 서로 묶지 않는다 — 전화로만 받는 집이 있다.
+  const [reservable, setReservable] = useState(false);
+  const [reservationUrl, setReservationUrl] = useState("");
   // 상황 태그 (SPEC §3.2). 점메추가 시간대별로 가중치를 다르게 주는 축이다.
   const [moods, setMoods] = useState<Mood[]>([]);
   const [menus, setMenus] = useState<NewMenu[]>([
@@ -143,6 +152,10 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   const coords =
     pinned ?? (picked ? { lat: picked.lat, lng: picked.lng } : geoCenter);
 
+  // 링크가 잘못됐으면 저장 버튼을 막는다. 여기서 안 막으면 DB 제약이 던지는
+  // 23514 를 만나는데, 그건 "등록하지 못했어요" 로만 보여서 어디가 문제인지 모른다.
+  const reservationProblem = reservationUrlError(reservationUrl);
+
   // 위치를 확정하는 순간 물어본다. 여기서 걸리면 폼을 채우기 전에 되돌아간다.
   const checkDup = useMutation({
     mutationFn: (at: { lat: number; lng: number }) => findDuplicate(name, at),
@@ -180,6 +193,8 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
         memo: memo.trim() || null,
         naverPlaceUrl: picked?.link || null,
         moodTags: moods,
+        reservable,
+        reservationUrl: normalizeReservationUrl(reservationUrl),
         menus,
       });
     },
@@ -457,6 +472,47 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
         </div>
       </fieldset>
 
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">예약</legend>
+        {/* 스위치는 색만으로 켜짐을 말한다. 옆에 글자를 함께 둔다 (CLAUDE.md) */}
+        <div className="flex items-center gap-2">
+          <Switch
+            id="reservable"
+            checked={reservable}
+            onCheckedChange={(v) => setReservable(v === true)}
+          />
+          <label htmlFor="reservable" className="text-body">
+            {reservable ? "예약 받아요" : "예약 안 받아요"}
+          </label>
+        </div>
+
+        {/* 링크는 예약을 켠 경우에만 묻는다. 안 받는 집에 링크 칸이 떠 있으면
+            "여기 뭘 넣어야 하나" 를 매번 생각하게 된다. */}
+        {reservable && (
+          <div className="flex flex-col gap-1">
+            <Input
+              type="url"
+              inputMode="url"
+              value={reservationUrl}
+              onChange={(e) => setReservationUrl(e.target.value)}
+              maxLength={RESERVATION_URL_MAX_LEN}
+              placeholder="https://booking.naver.com/..."
+              aria-label="예약 링크"
+              aria-invalid={reservationProblem !== null}
+              aria-describedby="reservation-help"
+            />
+            <p
+              id="reservation-help"
+              className={`text-caption ${
+                reservationProblem ? "text-danger" : "text-muted-foreground"
+              }`}
+            >
+              {reservationProblem ?? "전화로만 받으면 비워 두세요"}
+            </p>
+          </div>
+        )}
+      </fieldset>
+
       <label className="flex flex-col gap-1.5">
         <span className="text-label font-medium">사내 메모</span>
         <textarea
@@ -553,7 +609,12 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
 
       <div className="flex items-center gap-2">
         <Button
-          disabled={chosenCategory === null || name.length === 0 || save.isPending}
+          disabled={
+            chosenCategory === null ||
+            name.length === 0 ||
+            reservationProblem !== null ||
+            save.isPending
+          }
           onClick={() => save.mutate()}
         >
           {save.isPending ? "등록 중" : "맛집 등록하기"}

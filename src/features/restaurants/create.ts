@@ -23,6 +23,8 @@ export type NewRestaurant = {
   memo: string | null;
   naverPlaceUrl: string | null;
   moodTags: Mood[];
+  reservable: boolean;
+  reservationUrl: string | null;
   menus: NewMenu[];
 };
 
@@ -108,6 +110,8 @@ export async function createRestaurant(input: NewRestaurant): Promise<string> {
       memo: input.memo,
       naver_place_url: input.naverPlaceUrl,
       mood_tags: input.moodTags,
+      reservable: input.reservable,
+      reservation_url: input.reservationUrl,
       created_by: userId,
     })
     .select("id")

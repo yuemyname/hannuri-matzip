@@ -28,7 +28,32 @@ export type PickResult = {
   logId: string | null;
   /** 결과 카드에 쓸 대표메뉴 (SPEC §4.2). 없으면 null — 카드는 없어도 멀쩡해야 한다 */
   signatureMenu: string | null;
+  /** 예약 링크. 없으면 null (전화만 받거나 예약을 안 받는 곳) */
+  reservationUrl: string | null;
 };
+
+/**
+ * 뽑힌 곳의 예약 정보.
+ *
+ * `pick_restaurant` 이 안 준다 — 그 함수는 `restaurants_within` 과 컬럼을 맞추고
+ * 있어서, 예약 두 칸을 끼우려면 함수를 통째로 다시 만들어야 한다. 뽑은 뒤 한 곳만
+ * 물어보면 되는 값이라 대표메뉴와 같이 한 번 더 다녀오는 쪽이 싸다.
+ */
+async function fetchReservation(
+  restaurantId: string,
+): Promise<{ reservable: boolean; reservationUrl: string | null }> {
+  const supabase = getSupabase();
+  if (!supabase) return { reservable: false, reservationUrl: null };
+  const { data, error } = await supabase
+    .from("restaurants")
+    .select("reservable, reservation_url")
+    .eq("id", restaurantId)
+    .maybeSingle();
+  // 못 물어봤으면 "예약 정보 없음" 으로 둔다. 이것 때문에 추천이 실패하면 안 된다.
+  if (error || !data) return { reservable: false, reservationUrl: null };
+  const r = data as Record<string, unknown>;
+  return { reservable: r.reservable === true, reservationUrl: str(r.reservation_url) };
+}
 
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v));
 const str = (v: unknown) => (typeof v === "string" ? v : null);
@@ -52,6 +77,7 @@ function toRestaurant(row: unknown): NearbyRestaurant | null {
     avgRating: Number.isFinite(num(r.avg_rating)) ? num(r.avg_rating) : 0,
     reviewCount: Number.isFinite(num(r.review_count)) ? num(r.review_count) : 0,
     moodTags: toMoods(r.mood_tags),
+    reservable: r.reservable === true,
   };
 }
 
@@ -64,7 +90,13 @@ function toRestaurant(row: unknown): NearbyRestaurant | null {
  */
 export async function pickRestaurant(p: PickParams): Promise<PickResult> {
   const supabase = getSupabase();
-  if (!supabase) return { restaurant: null, logId: null, signatureMenu: null };
+  if (!supabase)
+    return {
+      restaurant: null,
+      logId: null,
+      signatureMenu: null,
+      reservationUrl: null,
+    };
   const session = await ensureSession();
   const userId = session?.user.id ?? null;
 
@@ -84,12 +116,18 @@ export async function pickRestaurant(p: PickParams): Promise<PickResult> {
   const first = Array.isArray(rows) ? rows[0] : null;
   const restaurant = toRestaurant(first);
   if (!restaurant)
-    return { restaurant: null, logId: null, signatureMenu: null };
+    return {
+      restaurant: null,
+      logId: null,
+      signatureMenu: null,
+      reservationUrl: null,
+    };
 
   // 대표메뉴는 RPC 가 안 준다 (restaurants_within 과 같은 컬럼이라서).
   // 로그 기록과 함께 병렬로 가져온다 — 어차피 셔플 1.2초 뒤에 화면에 뜬다.
-  const [signatureMenu, log] = await Promise.all([
+  const [signatureMenu, reservation, log] = await Promise.all([
     fetchSignatureMenu(restaurant.id),
+    fetchReservation(restaurant.id),
     userId
       ? supabase
           .from("recommendation_logs")
@@ -105,7 +143,12 @@ export async function pickRestaurant(p: PickParams): Promise<PickResult> {
       : Promise.resolve(null),
   ]);
 
-  return { restaurant, logId: log?.id ?? null, signatureMenu };
+  return {
+    restaurant: { ...restaurant, reservable: reservation.reservable },
+    logId: log?.id ?? null,
+    signatureMenu,
+    reservationUrl: reservation.reservationUrl,
+  };
 }
 
 /** [여기로 갈게요] = true, [다시 뽑기] = false (WBS 4.4) */

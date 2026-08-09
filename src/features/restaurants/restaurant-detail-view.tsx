@@ -11,6 +11,7 @@ import { ReviewForm } from "@/features/reviews/review-form";
 import { MenuEditor } from "./menu-editor";
 import { useCurrentUserId, useRestaurantDetail } from "./use-detail";
 import { PRICE_LABEL } from "./price";
+import { reservationUrlError } from "@/lib/reservation";
 import type { RestaurantDetail, Review } from "./detail-api";
 
 /**
@@ -159,6 +160,14 @@ function Header({ data }: { data: RestaurantDetail }) {
     data.naverPlaceUrl ??
     `https://map.naver.com/p/search/${encodeURIComponent(data.name)}`;
 
+  // **href 로 쓰기 전에 한 번 더 본다.** DB 제약이 막고 있지만, 그 제약보다 먼저
+  // 들어간 값이나 제약을 지나지 않는 경로가 생기면 여기가 마지막 문이다.
+  // `javascript:` 가 통과하면 클릭 한 번에 스크립트가 돈다.
+  const bookingUrl =
+    data.reservationUrl && reservationUrlError(data.reservationUrl) === null
+      ? data.reservationUrl
+      : null;
+
   return (
     <header className="flex flex-col gap-2">
       <h3 className="text-title">{data.name}</h3>
@@ -207,6 +216,24 @@ function Header({ data }: { data: RestaurantDetail }) {
           {data.memo}
         </p>
       )}
+
+      {/* 예약 (2026-08-09). 링크가 있으면 버튼, 없으면 사실만 적는다 —
+          "예약 가능" 만 띄워 놓고 갈 데가 없으면 그게 더 답답하다. */}
+      {data.reservable &&
+        (bookingUrl ? (
+          <a
+            href={bookingUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex self-start items-center rounded-md bg-primary px-4 py-2 text-label text-primary-foreground"
+          >
+            예약하기
+          </a>
+        ) : (
+          <p className="text-caption text-muted-foreground">
+            예약 받는 곳이에요{data.phone ? ". 전화로 물어보세요" : ""}
+          </p>
+        ))}
 
       <a
         href={naverUrl}
