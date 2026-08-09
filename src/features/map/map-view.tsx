@@ -28,7 +28,7 @@ export type MapViewProps = {
   initialZoom: number | null;
   /** 여기로 옮기라는 신호. 값이 바뀔 때만 panTo 한다 */
   focus: LatLng | null;
-  /** 반경의 기준점. 지도를 끌어도 여기 머문다 (내 위치 또는 사무실 폴백) */
+  /** 반경(=조회)의 기준점. 처음엔 내 위치, 지도를 움직이면 지도 중심을 따라온다 */
   anchor: LatLng;
   me: Coords | null;
   radius: number;

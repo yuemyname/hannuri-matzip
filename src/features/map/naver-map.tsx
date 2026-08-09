@@ -145,8 +145,8 @@ export default function NaverMap({
     const stroke = readToken("--color-brand-500");
     radiusRef.current = new naver.maps.Circle({
       map,
-      // 지도 중심이 아니라 anchor 다. 지도를 끌어도 반경 기준은 내 위치에 머문다 —
-      // 원이 그려진 곳과 조회 결과가 어긋나면 안 된다.
+      // anchor 는 조회 기준점이다. 지도를 옮기면 따라온다 — 원이 그려진 곳과
+      // 조회 결과가 어긋나면 안 되므로 둘은 늘 같은 점을 쓴다.
       center: new naver.maps.LatLng(anchor.lat, anchor.lng),
       radius,
       // 토큰을 못 읽으면 색 옵션을 빼고 SDK 기본값에 맡긴다
@@ -166,7 +166,7 @@ export default function NaverMap({
     map.panTo(new naver.maps.LatLng(focus.lat, focus.lng));
   }, [status, focus]);
 
-  // 반경 원은 anchor 를 따라간다 (내 위치를 얻으면 거기로, 못 얻으면 사무실 폴백).
+  // 반경 원은 anchor 를 따라간다 — 처음엔 내 위치, 지도를 움직인 뒤로는 지도 중심.
   useEffect(() => {
     const map = mapRef.current;
     if (status !== "ready" || !map) return;

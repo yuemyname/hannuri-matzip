@@ -99,7 +99,9 @@ export function MapPanel({
           initialCenter={center ?? geoCenter}
           initialZoom={zoom}
           focus={focus}
-          anchor={geoCenter}
+          // 반경 원은 조회 기준점과 같은 곳에 그린다. 둘이 어긋나면 원 밖의
+          // 마커가 보이거나 원 안이 비어 보인다.
+          anchor={center ?? geoCenter}
           me={coords}
           radius={radius}
           restaurants={restaurants}
