@@ -47,9 +47,15 @@ function useFirstRunWelcome() {
   }, [router]);
 }
 
-/** 보조 액션 알약. 주 액션(점메추)만 브랜드색이고 나머지는 흰 알약이다 */
+/**
+ * 지도 위 액션 알약. **셋의 크기를 맞춘다** — 폭까지 고정해서 세로로 쌓았을 때
+ * 오른쪽 변이 한 줄로 떨어지게 한다. 글자 수가 달라도(2·3·4자) 자리가 안 흔들린다.
+ * 색만 다르다: 주 액션(점메추)이 브랜드색, 나머지는 흰 알약.
+ */
 const ACTION =
-  "inline-flex shrink-0 items-center rounded-chip border border-border bg-background px-3 py-1.5 text-label shadow-pop hover:bg-muted";
+  "inline-flex w-20 shrink-0 items-center justify-center rounded-chip border px-3 py-2 text-label shadow-pop";
+const ACTION_SUB = `${ACTION} border-border bg-background hover:bg-muted`;
+const ACTION_MAIN = `${ACTION} border-transparent bg-primary text-primary-foreground hover:bg-brand-700`;
 
 export function MainView() {
   useFirstRunWelcome();
@@ -131,41 +137,35 @@ export function MainView() {
         />
       </div>
 
-      {/* 지도 위에 뜨는 것들. 아래에서부터 컨트롤 → 고른 곳 카드 → 액션 순으로 쌓인다.
-          **감싸는 층은 포인터 이벤트를 받지 않는다** — 받으면 지도 아래쪽
-          절반을 손가락으로 끌 수 없게 된다. 실제 버튼만 켠다.
+      {/* 오른쪽 위 = 무엇을 할지. 아래(필터·카드)와 층을 나눈다.
+          위쪽은 지도에서 잘 안 쓰는 자리라 액션을 둬도 지도를 덜 가린다.
+          아이콘 대신 글자를 쓴다. 앱 전체가 글자 기반이라 여기만 아이콘을
+          들이면 "이게 뭐지" 하는 버튼이 생긴다.
 
-          **전부 한 흐름(flex column)에 넣는다.** 액션만 따로 absolute 로 띄웠더니
-          마커를 골랐을 때 뜨는 카드와 겹쳐서, 카드 오른쪽이 눌리지 않았다.
-          떠 있는 것끼리는 좌표로 피하는 게 아니라 같은 줄에 세워서 피한다. */}
+          **감싸는 층은 포인터 이벤트를 받지 않는다** — 받으면 지도 위쪽을
+          손가락으로 끌 수 없게 된다. 실제 링크만 켠다. */}
+      <nav
+        aria-label="바로가기"
+        className="pointer-events-none absolute top-3 right-3 z-[var(--z-filterbar)] flex flex-col items-end gap-2"
+      >
+        <Link href="/pick" className={`${ACTION_MAIN} pointer-events-auto`}>
+          점메추
+        </Link>
+        <Link
+          href="/restaurants/new"
+          className={`${ACTION_SUB} pointer-events-auto`}
+        >
+          + 등록
+        </Link>
+        <Link href="/me" className={`${ACTION_SUB} pointer-events-auto`}>
+          내 정보
+        </Link>
+      </nav>
+
+      {/* 지도 아래에 뜨는 것들. 아래에서부터 컨트롤 → 고른 곳 카드 순으로 쌓인다.
+          여기도 감싸는 층은 포인터 이벤트를 안 받는다. */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[var(--z-filterbar)] flex flex-col gap-2 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto flex w-full max-w-[560px] flex-col gap-2">
-          {/* 오른쪽 = 무엇을 할지. 가운데(필터)와 섞지 않는다 — 엄지가 닿는
-              자리에 액션을 둔다 (SPEC §4.1). 세로로 쌓으면 화면을 130px 넘게
-              먹어서 640px 기기에서 지도가 얼마 안 남는다. 한 줄로 눕힌다.
-              아이콘 대신 글자를 쓴다. 앱 전체가 글자 기반이라 여기만 아이콘을
-              들이면 "이게 뭐지" 하는 버튼이 생긴다. */}
-          <nav
-            aria-label="바로가기"
-            className="flex items-center justify-end gap-2"
-          >
-            <Link href="/me" className={`${ACTION} pointer-events-auto`}>
-              내 정보
-            </Link>
-            <Link
-              href="/restaurants/new"
-              className={`${ACTION} pointer-events-auto`}
-            >
-              + 등록
-            </Link>
-            <Link
-              href="/pick"
-              className="pointer-events-auto inline-flex shrink-0 items-center rounded-chip bg-primary px-5 py-2.5 text-subtitle font-medium text-primary-foreground shadow-pop hover:bg-brand-700"
-            >
-              점메추
-            </Link>
-          </nav>
-
           {selected && (
             <div className="pointer-events-auto flex flex-col gap-1">
               <button

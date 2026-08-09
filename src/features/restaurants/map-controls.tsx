@@ -79,28 +79,6 @@ export function MapControls({
         onRetry={onRetry}
       />
 
-      <div
-        role="group"
-        aria-label="반경"
-        className="pointer-events-auto flex gap-1 self-center rounded-chip border border-border bg-background p-1 shadow-pop"
-      >
-        {RADIUS_OPTIONS.map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={radiusReady && radius === m}
-            onClick={() => onRadiusChange(m)}
-            className={`tnum rounded-chip px-2.5 py-1 text-label ${
-              radiusReady && radius === m
-                ? "bg-primary text-primary-foreground"
-                : "text-foreground hover:bg-muted"
-            }`}
-          >
-            {m}m
-          </button>
-        ))}
-      </div>
-
       {/* 칩은 가로 스크롤. 360px 에서 줄바꿈으로 부풀면 지도를 그만큼 덮는다.
           -mx/px 로 스크롤 영역만 화면 끝까지 늘려 잘린 느낌을 없앤다.
           이 줄은 스크롤을 받아야 해서 포인터 이벤트를 켠다.
@@ -151,6 +129,29 @@ export function MapControls({
             </button>
           )}
         </div>
+      </div>
+
+      {/* 반경은 카테고리 아래. 손가락에 제일 가까운 줄에 제일 자주 만지는 걸 둔다 */}
+      <div
+        role="group"
+        aria-label="반경"
+        className="pointer-events-auto flex gap-1 self-center rounded-chip border border-border bg-background p-1 shadow-pop"
+      >
+        {RADIUS_OPTIONS.map((m) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={radiusReady && radius === m}
+            onClick={() => onRadiusChange(m)}
+            className={`tnum rounded-chip px-2.5 py-1 text-label ${
+              radiusReady && radius === m
+                ? "bg-primary text-primary-foreground"
+                : "text-foreground hover:bg-muted"
+            }`}
+          >
+            {m}m
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -227,10 +228,8 @@ function Status({
     );
   }
 
-  // 마커 개수를 글자로도 적는다. 지도만 보면 겹친 마커를 셀 수 없다.
-  return (
-    <p role="status" className={`${pill} tnum text-muted-foreground`}>
-      {count}곳
-    </p>
-  );
+  // 결과가 있으면 아무 말도 안 한다. "N곳" 알약은 지도를 가리는 값에 비해
+  // 알려주는 게 적어서 뺐다 (2026-08-09 요청). 마커가 곧 답이다.
+  // 로딩·에러·빈 결과만 남긴다 — 그건 마커가 없는 이유를 알려주는 유일한 창구다.
+  return null;
 }
