@@ -56,6 +56,7 @@ const ACTION =
 
 const MENU = [
   { href: "/pick", label: "점메추" },
+  { href: "/bill", label: "밥값 내기" },
   { href: "/restaurants/new", label: "식당 등록" },
   { href: "/me", label: "MY" },
 ] as const;

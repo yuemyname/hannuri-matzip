@@ -59,15 +59,18 @@ src/app/
     (.)restaurants/new/page.tsx   # 등록
     (.)restaurants/[id]/page.tsx  # 상세
     (.)me/page.tsx                # 마이
+    (.)bill/page.tsx              # 밥값 내기
     (.)welcome/page.tsx           # 첫 사용자 안내 3스텝
   pick/page.tsx                   # ↓ 아래 4개는 풀페이지 fallback
   restaurants/new/page.tsx        #   직접 진입 / 새로고침 / 슬랙 링크 클릭 시
   restaurants/[id]/page.tsx
   me/page.tsx
+  bill/page.tsx
   welcome/page.tsx
 ```
 
-로그인 화면이 없으므로(익명 세션) 풀페이지는 fallback 5개뿐이다.
+로그인 화면이 없으므로(익명 세션) 풀페이지는 fallback 6개뿐이다.
+관리자 화면(`/admin`)만 예외로 인터셉트 짝이 없다 (§0.1).
 
 `(.)` = 같은 레벨 인터셉트. `@modal/default.tsx`가 없으면 새로고침 시 404가 난다.
 
