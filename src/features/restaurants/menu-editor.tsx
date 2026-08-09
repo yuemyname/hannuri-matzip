@@ -38,6 +38,14 @@ export function MenuEditor({
     },
   });
 
+  // 대표메뉴를 지웠으면 남은 첫 줄을 대표로 올린다. 안 그러면 대표가 하나도
+  // 없는 채로 저장돼서 점메추 결과 카드의 대표메뉴 줄이 조용히 사라진다.
+  const removeDraft = (prev: MenuDraft[], i: number): MenuDraft[] => {
+    const left = prev.filter((_, j) => j !== i);
+    if (left.length === 0 || left.some((d) => d.isSignature)) return left;
+    return left.map((d, j) => ({ ...d, isSignature: j === 0 }));
+  };
+
   const patch = (i: number, next: Partial<MenuDraft>) =>
     setDrafts((prev) => prev.map((d, j) => (j === i ? { ...d, ...next } : d)));
 
@@ -92,7 +100,7 @@ export function MenuEditor({
           <button
             type="button"
             aria-label={`${d.name || `${i + 1}번째 메뉴`} 지우기`}
-            onClick={() => setDrafts((prev) => prev.filter((_, j) => j !== i))}
+            onClick={() => setDrafts((prev) => removeDraft(prev, i))}
             className="shrink-0 rounded-chip px-2 py-1.5 text-label text-muted-foreground hover:bg-muted"
           >
             삭제

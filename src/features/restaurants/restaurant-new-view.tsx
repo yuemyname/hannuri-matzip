@@ -337,7 +337,7 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
           // 360px 에서 가격 칸과 [대표] 가 화면 밖으로 밀려난다.
           <div
             key={i}
-            className="grid grid-cols-[minmax(0,1fr)_5rem_auto] items-center gap-2"
+            className="grid grid-cols-[minmax(0,1fr)_5rem_auto_auto] items-center gap-2"
           >
             <Input
               value={m.name}
@@ -376,6 +376,16 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
               }`}
             >
               대표
+            </button>
+            {/* 상세의 메뉴 편집기와 같은 자리·같은 이름. 추가만 되고 못 지우면
+                한 줄 잘못 만든 사람이 빈 줄을 달고 등록하게 된다. */}
+            <button
+              type="button"
+              aria-label={`${m.name || `${i + 1}번째 메뉴`} 지우기`}
+              onClick={() => setMenus((prev) => removeMenu(prev, i))}
+              className="shrink-0 rounded-chip px-2 py-1.5 text-label text-muted-foreground hover:bg-muted"
+            >
+              삭제
             </button>
           </div>
         ))}
@@ -430,6 +440,19 @@ function updateMenu(
 }
 
 /** 두 지점 사이 거리(m). 핀을 얼마나 옮겼는지 보여주는 용도라 근사로 충분하다 */
+/**
+ * 메뉴 한 줄 지우기.
+ *
+ * **대표메뉴를 지웠으면 남은 첫 줄을 대표로 올린다.** 안 그러면 대표가 하나도
+ * 없는 채로 저장돼서, 점메추 결과 카드에 대표메뉴 줄이 조용히 사라진다.
+ * 다 지우면 빈 배열 — 메뉴 없이 등록하는 건 정상이다 (상세에서 나중에 채운다).
+ */
+function removeMenu(menus: NewMenu[], i: number): NewMenu[] {
+  const left = menus.filter((_, j) => j !== i);
+  if (left.length === 0 || left.some((m) => m.isSignature)) return left;
+  return left.map((m, j) => ({ ...m, isSignature: j === 0 }));
+}
+
 function distanceM(
   a: { lat: number; lng: number },
   b: { lat: number; lng: number },
