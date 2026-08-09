@@ -92,9 +92,14 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 - 추천 결과는 **서버가 결정한다.** 클라이언트 랜덤 금지. 애니메이션은 응답 수신 후 연출일 뿐.
 - `SUPABASE_SERVICE_ROLE_KEY`, `NAVER_SEARCH_CLIENT_SECRET`은 서버 라우트 전용.
   `NEXT_PUBLIC_` 접두사 붙이지 말 것.
-- 카테고리 목록의 단일 소스는 `src/lib/categories.ts`.
-  DB check 제약, 필터칩, 등록 폼 셀렉트가 전부 여기서 파생된다.
-  값을 추가할 때는 마이그레이션과 이 파일을 같은 커밋에서 바꾼다.
+- **카테고리 목록의 단일 소스는 DB의 `categories` 표다.** 필터칩·등록 폼·점메추가
+  전부 `useCategories()` 로 읽는다. 코드에 목록을 다시 적지 말 것.
+  등록 폼에서 직접 입력하면 그 자리에서 한 줄이 늘어난다.
+  `src/lib/categories.ts` 에 남은 건 **이름 규칙과 색 배정**뿐이다.
+  이름 규칙(`categoryError`)은 마이그레이션의 `categories_name_format` 제약과
+  같은 뜻이어야 한다 — 갈라지면 폼은 통과시키는데 저장이 실패한다. 같은 커밋에서 바꾼다.
+- `restaurants.category` 는 `categories(name)` 을 가리키는 외래키다.
+  **새 종류는 맛집보다 먼저 만든다.** 순서가 뒤집히면 등록이 통째로 실패한다.
 
 ### 하지 말 것
 - 네이버 플레이스 리뷰/평점 크롤링 (약관 위반)

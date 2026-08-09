@@ -9,7 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { CategoryChip } from "@/components/category-chip";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
-import { CATEGORIES, type Category } from "@/lib/categories";
+import type { Category } from "@/lib/categories";
+import { useCategories } from "@/features/categories/api";
 import { RADIUS_OPTIONS } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView } from "@/features/map/map-store";
@@ -46,6 +47,7 @@ export function PickView() {
 
   const [radius, setRadius] = useState(radiusFromMap);
   const [categories, setCategories] = useState<Category[]>([]);
+  const categoryList = useCategories();
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [excludeRecent, setExcludeRecent] = useState(true);
 
@@ -154,7 +156,7 @@ export function PickView() {
       <fieldset className="flex flex-col gap-2">
         <legend className="text-label font-medium">카테고리</legend>
         <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((c) => (
+          {(categoryList.data ?? []).map((c) => (
             <CategoryChip
               key={c}
               category={c}
@@ -218,7 +220,10 @@ export function PickView() {
       <div aria-live="polite" className="min-h-0">
         {/* 응답이 도착한 뒤(=shuffling)에만 남은 시간을 안다 */}
         {(pick.isPending || shuffling) && (
-          <Shuffling determinate={!pick.isPending && shuffling} />
+          <Shuffling
+            determinate={!pick.isPending && shuffling}
+            labels={categoryList.data ?? []}
+          />
         )}
 
         {showResult && result && (
@@ -296,13 +301,20 @@ function useShuffle(startedAt: number | null) {
  * 상태는 옆의 "고르는 중" 글자와 바깥의 `aria-live` 가 이미 알린다.
  * 색만으로 알리지 않는다는 규칙(CLAUDE.md)도 그 글자가 지킨다.
  */
-function Shuffling({ determinate }: { determinate: boolean }) {
+function Shuffling({
+  determinate,
+  labels,
+}: {
+  determinate: boolean;
+  labels: readonly string[];
+}) {
   const [i, setI] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setI((v) => v + 1), TICK_MS);
     return () => clearInterval(t);
   }, []);
-  const label = CATEGORIES[i % CATEGORIES.length];
+  // 목록을 아직 못 받았을 수 있다. 그때도 뭔가는 넘겨야 화면이 안 빈다.
+  const label = labels.length > 0 ? labels[i % labels.length] : "고르는 중";
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-border p-6">

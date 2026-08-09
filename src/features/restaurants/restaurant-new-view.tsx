@@ -7,7 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CategoryChip } from "@/components/category-chip";
 import { Distance } from "@/components/distance";
-import { CATEGORIES, type Category } from "@/lib/categories";
+import {
+  categoryError,
+  normalizeCategory,
+  CATEGORY_MAX_LEN,
+  type Category,
+} from "@/lib/categories";
+import {
+  ensureCategory,
+  useCategories,
+  CATEGORIES_KEY,
+} from "@/features/categories/api";
 import { useMapView } from "@/features/map/map-store";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { areaNameOf } from "@/features/map/reverse-geocode";
@@ -51,6 +61,10 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   const [manualName, setManualName] = useState("");
 
   const [category, setCategory] = useState<Category | null>(null);
+  // 목록에 없는 종류를 직접 적는 칸. 열려 있을 때만 값이 의미를 갖는다.
+  const [customOpen, setCustomOpen] = useState(false);
+  const [custom, setCustom] = useState("");
+  const categoryList = useCategories();
   const [priceRange, setPriceRange] = useState<number | null>(null);
   const [memo, setMemo] = useState("");
   const [menus, setMenus] = useState<NewMenu[]>([
@@ -108,14 +122,30 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   }, [step, startPin, stopPin]);
 
   const name = picked?.name ?? manualName.trim();
+
+  // 직접 입력 칸이 열려 있으면 그쪽이 이긴다. 칩과 입력칸 둘 다에서 값이 나오면
+  // 무엇으로 저장될지 화면만 봐서는 알 수 없다 — 한쪽만 살아 있게 한다.
+  const customName = normalizeCategory(custom);
+  const customProblem = custom.length > 0 ? categoryError(customName) : null;
+  const chosenCategory: Category | null = customOpen
+    ? customProblem || customName.length === 0
+      ? null
+      : customName
+    : category;
   const coords =
     pinned ?? (picked ? { lat: picked.lat, lng: picked.lng } : geoCenter);
 
   const save = useMutation({
-    mutationFn: () =>
-      createRestaurant({
+    mutationFn: async () => {
+      // 목록에 없는 이름이면 **맛집보다 먼저** 종류를 만든다.
+      // restaurants.category 가 categories 를 가리키는 외래키라, 순서가 뒤집히면
+      // 등록이 통째로 실패한다.
+      if (chosenCategory && !(categoryList.data ?? []).includes(chosenCategory)) {
+        await ensureCategory(chosenCategory);
+      }
+      return createRestaurant({
         name,
-        category: category!,
+        category: chosenCategory!,
         address: picked?.address ?? null,
         roadAddress: picked?.roadAddress ?? null,
         lat: coords.lat,
@@ -125,9 +155,12 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
         memo: memo.trim() || null,
         naverPlaceUrl: picked?.link || null,
         menus,
-      }),
+      });
+    },
     onSuccess: async (id) => {
       await qc.invalidateQueries({ queryKey: ["restaurants", "nearby"] });
+      // 새 종류가 생겼을 수 있다. 필터칩·점메추가 같은 목록을 쓰므로 같이 턴다.
+      await qc.invalidateQueries({ queryKey: CATEGORIES_KEY });
       // 등록 직후 상세로 (SPEC §4.4-5). replace 라 뒤로가기가 등록 폼으로 안 돌아온다.
       router.replace(`/restaurants/${id}`);
     },
@@ -286,15 +319,55 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
           카테고리 <span className="text-danger">*</span>
         </legend>
         <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((c) => (
+          {(categoryList.data ?? []).map((c) => (
             <CategoryChip
               key={c}
               category={c}
-              selected={category === c}
-              onToggle={(v) => setCategory(v)}
+              selected={!customOpen && category === c}
+              onToggle={(v) => {
+                setCustomOpen(false);
+                setCategory(v);
+              }}
             />
           ))}
+          {/* 목록에 마땅한 게 없을 때. 「기타」로 밀어 넣으면 나중에 아무도
+              그게 뭐였는지 모른다 — 적은 이름이 그대로 새 종류가 된다. */}
+          <button
+            type="button"
+            aria-pressed={customOpen}
+            onClick={() => setCustomOpen((v) => !v)}
+            className={`inline-flex shrink-0 items-center rounded-chip px-3 py-1.5 text-label transition-colors ${
+              customOpen
+                ? "bg-primary text-primary-foreground"
+                : "border border-border bg-background text-foreground hover:bg-muted"
+            }`}
+          >
+            직접 입력
+          </button>
         </div>
+
+        {customOpen && (
+          <div className="flex flex-col gap-1">
+            <Input
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              maxLength={CATEGORY_MAX_LEN}
+              placeholder="예: 아시안"
+              aria-label="새 종류 이름"
+              aria-invalid={customProblem !== null}
+              aria-describedby="category-custom-help"
+            />
+            <p
+              id="category-custom-help"
+              // 문제가 있으면 그것만 말한다. 규칙을 늘어놓는 것보다 짧다.
+              className={`text-caption ${
+                customProblem ? "text-danger" : "text-muted-foreground"
+              }`}
+            >
+              {customProblem ?? "한글·영문으로 짧게. 새 종류로 추가돼요"}
+            </p>
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="flex flex-col gap-2">
@@ -414,7 +487,7 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
 
       <div className="flex items-center gap-2">
         <Button
-          disabled={category === null || name.length === 0 || save.isPending}
+          disabled={chosenCategory === null || name.length === 0 || save.isPending}
           onClick={() => save.mutate()}
         >
           {save.isPending ? "등록 중" : "맛집 등록하기"}

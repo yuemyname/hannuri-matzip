@@ -8,6 +8,7 @@ import { hasSeenWelcome } from "@/features/onboarding/seen";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
 import type { Category } from "@/lib/categories";
+import { useCategories } from "@/features/categories/api";
 import { useNearby } from "./use-nearby";
 import { MapControls } from "./map-controls";
 import { RestaurantCard } from "./restaurant-card";
@@ -86,6 +87,8 @@ export function MainView() {
   const hydrated = useMapViewHydrated();
 
   const [categories, setCategories] = useState<Category[]>([]);
+  // 칩을 세우는 순서는 DB 가 정한다 (categories.sort_order).
+  const categoryList = useCategories();
 
   // **카테고리를 서버에 넘기지 않는다.** 넘기면 서버가 걸러서 오므로, 안 고른
   // 종류가 반경 안에 몇 곳인지 알 수 없다 — 칩에 개수를 못 붙이고 "없는 종류"도
@@ -187,6 +190,7 @@ export function MainView() {
             onToggleCategory={toggleCategory}
             onClearCategories={clearCategories}
             categoryCounts={categoryCounts}
+            allCategories={categoryList.data ?? []}
             count={restaurants.length}
             // placeholderData 로 이전 결과를 들고 있는 동안은 로딩이 아니다.
             // 여기서 isFetching 을 보면 토글을 바꿀 때마다 문구가 번쩍인다.

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { CategoryChip } from "@/components/category-chip";
-import { CATEGORIES, type Category } from "@/lib/categories";
+import type { Category } from "@/lib/categories";
 import { RADIUS_OPTIONS } from "@/features/map/config";
 
 /**
@@ -30,6 +30,7 @@ export function MapControls({
   onToggleCategory,
   onClearCategories,
   categoryCounts,
+  allCategories,
   count,
   isLoading,
   isError,
@@ -45,6 +46,8 @@ export function MapControls({
   onClearCategories: () => void;
   /** 지금 반경 안에 실제로 있는 카테고리와 그 개수. 없는 종류는 칩을 안 그린다 */
   categoryCounts: ReadonlyMap<Category, number>;
+  /** DB 가 정한 순서의 전체 목록. 칩을 세우는 순서를 여기서 가져온다 */
+  allCategories: readonly Category[];
   count: number;
   isLoading: boolean;
   isError: boolean;
@@ -57,7 +60,7 @@ export function MapControls({
   // **지금 반경 안에 있는 종류만** 보여준다. 없는 걸 눌러 봐야 0건이다.
   // 고른 종류는 개수가 0이 돼도 남긴다 — 안 그러면 반경을 좁혔을 때
   // 칩이 사라져서 필터를 풀 방법이 없어진다.
-  const shown = CATEGORIES.filter(
+  const shown = allCategories.filter(
     (c) => (categoryCounts.get(c) ?? 0) > 0 || categories.includes(c),
   );
 

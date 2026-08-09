@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { CategoryChip } from "@/components/category-chip";
-import { CATEGORIES, type Category } from "@/lib/categories";
+import type { Category } from "@/lib/categories";
+
+// 갤러리는 DB 를 안 부른다. 색 배정을 눈으로 보는 게 목적이라 씨앗 7종을 적어 둔다.
+const CATEGORIES = ["한식","중식","일식","양식","분식","카페","기타"] as const;
 
 export function ChipDemo() {
   const [picked, setPicked] = useState<Category[]>(["한식"]);

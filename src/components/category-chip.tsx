@@ -1,20 +1,10 @@
 "use client";
 
-import type { Category } from "@/lib/categories";
+import { categoryColorClass, type Category } from "@/lib/categories";
 import { cn } from "./ui/cn";
 
-// 카테고리별 색. Tailwind 는 클래스 문자열을 정적으로 읽으므로 조립하지 말고 전부 적는다.
-// Record<Category, …> 라서 카테고리를 추가하면 여기서 타입 에러가 난다 —
-// src/lib/categories.ts 와 갈라지지 않게 하는 장치다.
-const SELECTED: Record<Category, string> = {
-  한식: "bg-cat-korean text-white",
-  중식: "bg-cat-chinese text-white",
-  일식: "bg-cat-japanese text-white",
-  양식: "bg-cat-western text-white",
-  분식: "bg-cat-snack text-white",
-  카페: "bg-cat-cafe text-white",
-  기타: "bg-cat-etc text-white",
-};
+// 색은 이름에서 나온다 (categoryColorClass). 목록이 DB 로 옮겨가 열려 버려서
+// 여기에 이름별 표를 둘 수 없다 — 새 종류가 생기는 즉시 색이 없어진다.
 
 export function CategoryChip({
   category,
@@ -47,7 +37,7 @@ export function CategoryChip({
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-chip px-3 py-1.5 text-label transition-colors",
         selected
-          ? SELECTED[category]
+          ? categoryColorClass(category)
           : "border border-border bg-background text-foreground hover:bg-muted",
         className,
       )}
