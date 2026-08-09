@@ -7,6 +7,7 @@ import { MapPanel } from "@/features/map/map-panel";
 import { hasSeenWelcome } from "@/features/onboarding/seen";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
+import { MAX_MARKERS, MIN_QUERY_ZOOM } from "@/features/map/config";
 import { metersBetween } from "@/features/map/geo";
 import type { Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
@@ -172,11 +173,19 @@ export function MainView() {
   // 하고 끌어 본 사람에게 화면 절반이 비어 보인다. 줄을 당겨 넓히면 더 보이고
   // 좁히면 덜 보인다 — 보이는 데까지가 곧 규칙이라 원도 반경 토글도 없앴다.
   const bounds = useMapView((s) => s.bounds);
+  const zoom = useMapView((s) => s.zoom);
 
   // **카테고리를 서버에 넘기지 않는다.** 넘기면 서버가 걸러서 오므로, 안 고른
   // 종류가 화면 안에 몇 곳인지 알 수 없다 — 칩에 개수를 못 붙이고 "없는 종류"도
   // 못 가린다. 화면 안 결과는 많아야 수십 건이라 거르기는 여기서 해도 된다.
-  const query = useInBounds(hydrated ? bounds : null);
+  const query = useInBounds(hydrated ? bounds : null, zoom);
+  // 너무 넓게 보면 조회를 멈춘다. 그때 직전 결과가 남아 있으면 "확대하면 보여요"
+  // 라고 적어 놓고 마커는 떠 있는 꼴이 된다 — 좁혀서 본 자리의 마커다.
+  const tooWide = zoom !== null && zoom < MIN_QUERY_ZOOM;
+
+  // 상한보다 한 건 더 받아 온다. 넘쳤으면 잘라서 그리되 **조용히 자르지 않는다** —
+  // 화면이 알려 주지 않으면 "이게 전부" 로 읽힌다.
+  const truncated = !tooWide && (query.data?.length ?? 0) > MAX_MARKERS;
 
   // 서버가 준 `distance_m` 은 **조회 기준점에서의 거리**다. 지도를 옮기면 그게
   // 화면 한복판 기준이 되어 버려서, 걸어갈 거리를 묻는 사람에게 거짓말이 된다.
@@ -184,11 +193,11 @@ export function MainView() {
   const me = position.center;
   const all = useMemo(
     () =>
-      (query.data ?? []).map((r) => ({
+      (tooWide ? [] : (query.data ?? []).slice(0, MAX_MARKERS)).map((r) => ({
         ...r,
         distanceM: Math.round(metersBetween(me, { lat: r.lat, lng: r.lng })),
       })),
-    [query.data, me],
+    [query.data, me, tooWide],
   );
 
   // 종류별 개수. 거르기 전 목록에서 세야 "한식 3 / 일식 2" 가 나온다.
@@ -262,6 +271,9 @@ export function MainView() {
             categoryCounts={categoryCounts}
             allCategories={categoryList.data ?? []}
             count={restaurants.length}
+            truncated={truncated}
+            // 너무 넓게 보면 조회를 안 한다. 마커가 없는 이유를 화면이 말해야 한다.
+            tooWide={tooWide}
             // placeholderData 로 이전 결과를 들고 있는 동안은 로딩이 아니다.
             // 여기서 isFetching 을 보면 토글을 바꿀 때마다 문구가 번쩍인다.
             isLoading={query.isPending}

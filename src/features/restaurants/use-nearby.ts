@@ -2,6 +2,7 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Category } from "@/lib/categories";
+import { MIN_QUERY_ZOOM } from "@/features/map/config";
 import type { LatLng } from "@/features/map/map-store";
 import {
   fetchInBounds,
@@ -67,7 +68,10 @@ export function useNearby(
  * idle 에서만 올라오지만, 손을 뗀 자리가 미세하게 다를 때마다 새로 받는 건 낭비라
  * 여기서도 자릿수를 줄인다.
  */
-export function useInBounds(bounds: Bounds | null) {
+export function useInBounds(bounds: Bounds | null, zoom: number | null) {
+  // 너무 넓게 보면 아예 안 묻는다. 어차피 상한에 걸려 잘리고, 잘린 100개는
+  // 쓸모가 없다 — 쿼터와 배터리만 쓴다.
+  const tooWide = zoom !== null && zoom < MIN_QUERY_ZOOM;
   const key = bounds
     ? [
         round(bounds.minLat),
@@ -79,7 +83,7 @@ export function useInBounds(bounds: Bounds | null) {
 
   return useQuery<NearbyRestaurant[]>({
     queryKey: ["restaurants", "bounds", key],
-    enabled: bounds !== null,
+    enabled: bounds !== null && !tooWide,
     queryFn: () => fetchInBounds(bounds!),
     // 범위를 바꾸는 동안 이전 결과를 들고 있는다. 없으면 매번 빈 배열을 거쳐
     // 마커가 전부 사라졌다 다시 생긴다 (WBS 2.3 "깜빡임 없음").

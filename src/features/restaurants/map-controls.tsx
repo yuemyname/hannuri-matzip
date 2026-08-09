@@ -31,6 +31,8 @@ export function MapControls({
   categoryCounts,
   allCategories,
   count,
+  truncated,
+  tooWide,
   isLoading,
   isError,
   onRetry,
@@ -43,6 +45,10 @@ export function MapControls({
   /** DB 가 정한 순서의 전체 목록. 칩을 세우는 순서를 여기서 가져온다 */
   allCategories: readonly Category[];
   count: number;
+  /** 화면 안이 상한을 넘어 잘렸는가. 조용히 자르면 "이게 전부" 로 읽힌다 */
+  truncated: boolean;
+  /** 너무 넓게 봐서 아예 조회를 안 한 상태인가 */
+  tooWide: boolean;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
@@ -70,6 +76,8 @@ export function MapControls({
     <div className="flex flex-col gap-2">
       <Status
         count={count}
+        truncated={truncated}
+        tooWide={tooWide}
         isLoading={isLoading}
         isError={isError}
         hasFilters={categories.length > 0}
@@ -145,12 +153,16 @@ function chip(active: boolean) {
 /** 리스트가 맡던 로딩·에러·빈 결과 안내. 지도 위에 뜨므로 알약 하나로 줄인다 */
 function Status({
   count,
+  truncated,
+  tooWide,
   isLoading,
   isError,
   hasFilters,
   onRetry,
 }: {
   count: number;
+  truncated: boolean;
+  tooWide: boolean;
   isLoading: boolean;
   isError: boolean;
   hasFilters: boolean;
@@ -171,6 +183,16 @@ function Status({
         >
           다시 시도
         </button>
+      </p>
+    );
+  }
+
+  // 넓게 보면 아예 안 묻는다. 마커가 없는 이유를 화면이 말해야 한다 —
+  // 아무 말도 없으면 "이 동네에 맛집이 없다" 로 읽힌다.
+  if (tooWide) {
+    return (
+      <p role="status" className={`${pill} text-muted-foreground`}>
+        조금 확대하면 맛집이 보여요
       </p>
     );
   }
@@ -200,6 +222,16 @@ function Status({
             맛집 등록하기
           </Link>
         )}
+      </p>
+    );
+  }
+
+  // 잘렸으면 말한다. **조용히 자르지 않는다** — 화면에 100개만 찍어 놓고
+  // 아무 말도 안 하면 그게 전부인 줄 안다.
+  if (truncated) {
+    return (
+      <p role="status" className={`${pill} text-muted-foreground`}>
+        너무 많아서 일부만 보여요 · 확대해 보세요
       </p>
     );
   }

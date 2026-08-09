@@ -17,6 +17,7 @@ create or replace function restaurants_in_bounds(
   p_categories text[] default null,
   -- 줌을 한참 빼면 서울 전체가 들어온다. 화면에 찍을 수 있는 양을 넘으면
   -- 마커가 뭉개지기만 하므로 잘라서 보낸다. 잘렸는지는 호출부가 개수로 안다.
+  -- 실제 값은 앱이 매번 넘긴다 (MAX_MARKERS + 1). 여기 기본값은 직접 부를 때의 보루다.
   p_limit integer default 200
 )
 returns table (

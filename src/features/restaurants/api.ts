@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_MARKERS } from "@/features/map/config";
 import { getSupabase } from "@/lib/supabase/client";
 import { ensureSession } from "@/lib/supabase/session";
 import { isCategory, type Category } from "@/lib/categories";
@@ -91,6 +92,9 @@ export async function fetchInBounds(
     p_max_lat: b.maxLat,
     p_max_lng: b.maxLng,
     p_categories: categories?.length ? [...categories] : null,
+    // **하나 더 받는다.** 딱 상한만큼 받으면 "마침 100곳" 과 "잘렸다" 를
+    // 구분할 수 없다. 한 건 더 오면 넘쳤다는 뜻이다.
+    p_limit: MAX_MARKERS + 1,
   });
   if (error) throw error;
 
