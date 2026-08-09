@@ -86,10 +86,22 @@ export function MapPanel({
 
   // 카메라는 **앱 밖에서 고른 경우에만** 옮긴다 (점메추 [여기로 갈게요], WBS 4.4).
   // 마커를 눌렀을 때 옮기면 방금 누른 것으로 지도가 튄다 (WBS 2.5).
+  //
+  // **한 선택에 딱 한 번만 옮긴다.** `restaurants` 는 조회할 때마다 새 배열이라
+  // 그것만 보고 옮기면, 지도를 끌 때마다(→ 재조회 → 새 배열) 고른 곳으로 다시
+  // 끌려간다. 게다가 옮기는 것이 곧 재조회라 그 자리에서 무한히 돈다 —
+  // 실제로 지도가 조금씩 밀려 나가며 요청을 계속 쐈다.
+  const focusedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (selectionSource !== null || !selectedId) return;
+    if (selectionSource !== null || !selectedId) {
+      focusedFor.current = null;
+      return;
+    }
+    if (focusedFor.current === selectedId) return;
     const hit = restaurants.find((r) => r.id === selectedId);
-    if (hit) setFocus({ lat: hit.lat, lng: hit.lng });
+    if (!hit) return;
+    focusedFor.current = selectedId;
+    setFocus({ lat: hit.lat, lng: hit.lng });
   }, [selectedId, selectionSource, restaurants]);
 
   return (

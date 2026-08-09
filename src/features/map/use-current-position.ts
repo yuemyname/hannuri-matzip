@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FALLBACK_CENTER } from "./config";
 
 // SPEC §5. 상태 머신: idle → prompting → granted | denied | insecure | unavailable | timeout
@@ -170,11 +170,25 @@ export function useCurrentPosition() {
     };
   }, [request]);
 
+  /**
+   * 지도 중심. granted 면 실제 위치, 아니면 사무실 폴백.
+   *
+   * 메모한다. 렌더마다 새 객체면 이 값을 의존성에 쓰는 쪽이 매 렌더 다시 도는데,
+   * 지금은 맛집 목록(거리를 여기 기준으로 다시 잰다)이 그렇다 — 배열이 매 렌더
+   * 새로 만들어지고 마커 diff 가 통째로 다시 돈다.
+   *
+   * (지도가 되돌아가던 버그의 원인은 이게 아니라 MapPanel 의 카메라 이펙트였다.
+   *  그건 거기서 고쳤고, 이건 헛도는 계산을 줄이는 것이다.)
+   */
+  const center = useMemo(
+    () => (coords ? { lat: coords.lat, lng: coords.lng } : FALLBACK_CENTER),
+    [coords],
+  );
+
   return {
     status,
     coords,
-    /** 지도 중심. granted 면 실제 위치, 아니면 사무실 폴백 */
-    center: coords ? { lat: coords.lat, lng: coords.lng } : FALLBACK_CENTER,
+    center,
     /** 폴백 좌표를 쓰고 있는지 — 배너를 띄울지 판단한다 */
     isFallback: status !== "granted",
     /** 정확도 200m 초과 (SPEC §5) */
