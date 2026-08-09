@@ -77,17 +77,16 @@ export function MapControls({
       />
 
       {/* 칩은 가로 스크롤. 360px 에서 줄바꿈으로 부풀면 지도를 그만큼 덮는다.
-          -mx/px 로 스크롤 영역만 화면 끝까지 늘려 잘린 느낌을 없앤다.
-          이 줄은 스크롤을 받아야 해서 포인터 이벤트를 켠다.
-
-          가운데 정렬은 안쪽 `w-max mx-auto` 로 한다. 스크롤 컨테이너에
           `justify-center` 를 걸면 **넘칠 때 왼쪽이 잘려 나가고 스크롤로도 못 닿는다.**
-          w-max 는 다 들어가면 가운데, 넘치면 왼쪽부터 정상 스크롤이다. */}
-      {/* **스크롤 상자 자체는 포인터를 안 받는다.** 이 줄은 화면 폭을 다 쓰므로,
-          받게 두면 칩이 없는 좌우 빈 자리에서도 지도를 못 끈다 — 지도 아래쪽
-          한 줄이 통째로 죽는다. 칩만 켜 두면 칩을 잡고 끄는 가로 스크롤은 그대로다. */}
-      <div className="pointer-events-none -mx-3 overflow-x-auto px-3 pb-1">
-        <div className="pointer-events-auto mx-auto flex w-max gap-2">
+          다 들어가면 가운데, 넘치면 왼쪽부터 정상 스크롤이어야 한다.
+
+          **폭이 `w-max max-w-full` 인 것이 핵심이다.** 칩이 다 들어가면 상자가
+          칩만큼만 차지해서 그 옆은 지도가 받고, 넘치면 화면 폭까지 벌어져 스크롤한다.
+          한때 상자를 화면 폭으로 두고 `pointer-events-none` 으로 비켜 보려 했는데,
+          그러면 손가락이 상자를 못 잡아서 **모바일에서 스와이프가 아예 안 됐다.**
+          비키는 것과 잡히는 것을 포인터로 나누려 하지 말고 폭으로 나눈다. */}
+      <div className="pointer-events-auto mx-auto w-max max-w-full overflow-x-auto pb-1">
+        <div className="flex w-max gap-2">
           <button
             type="button"
             aria-pressed={categories.length === 0}
