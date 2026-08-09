@@ -228,6 +228,15 @@
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
+  /* 모달 제목만 예외. 여기는 **프로그램으로만** 포커스한다 — 모달이 열릴 때
+     스크린리더 위치를 제목으로 옮기려는 것이다 (SHELL.md §3). `tabIndex={-1}`
+     이라 키보드로는 닿을 수 없으니 링이 알려 줄 것이 없고, 눈에는 제목을 감싼
+     상자로만 보인다 (실기기에서 "글자에 커서가 박힌 것 같다" 는 제보를 받았다).
+     포커스는 그대로 옮기고 링만 지운다 — 읽히는 순서는 안 바뀐다. */
+  [data-modal-title]:focus-visible {
+    @apply ring-0 ring-offset-0;
+  }
+
   /* iOS: 인풋 폰트 16px 미만이면 포커스 시 자동 확대됨 */
   input,
   textarea,

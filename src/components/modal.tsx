@@ -165,7 +165,7 @@ export function Modal({
             <Dialog.Title
               data-modal-title
               tabIndex={-1}
-              className="text-title outline-none"
+              className="text-title"
             >
               {title}
             </Dialog.Title>
