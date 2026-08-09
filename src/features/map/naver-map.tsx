@@ -4,11 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import {
   DEFAULT_ZOOM,
-  FIT_BOUNDS_MARGIN,
+  FALLBACK_BOUNDS_SPAN_DEG,
   NAVER_MAP_CLIENT_ID,
   naverMapsSdkUrl,
   readToken,
-  readTokenNumber,
 } from "./config";
 import {
   MARKER_SIZE,
@@ -50,9 +49,7 @@ export default function NaverMap({
   initialCenter,
   initialZoom,
   focus,
-  anchor,
   me,
-  radius,
   restaurants,
   selectedId,
   onSelect,
@@ -62,7 +59,6 @@ export default function NaverMap({
   const mapRef = useRef<naver.maps.Map | null>(null);
   const meMarkerRef = useRef<naver.maps.Marker | null>(null);
   const accuracyRef = useRef<naver.maps.Circle | null>(null);
-  const radiusRef = useRef<naver.maps.Circle | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 맛집 마커. 지우고 다시 만들지 않고 이 맵을 diff 로 맞춘다 (CLAUDE.md).
   const markersRef = useRef(
@@ -72,6 +68,20 @@ export default function NaverMap({
   // idle 리스너는 지도 생성 시 한 번만 붙는다. 최신 콜백을 ref 로 넘겨준다.
   const onViewChangeRef = useRef(onViewChange);
   onViewChangeRef.current = onViewChange;
+
+  /** 지금 카메라를 스토어로 올린다. bounds 가 곧 조회 범위다 */
+  const report = (map: naver.maps.Map) => {
+    const c = map.getCenter();
+    // getBounds() 의 선언 타입은 PointBounds 와의 합집합이라 좁혀서 쓴다.
+    const bb = map.getBounds() as naver.maps.LatLngBounds;
+    const sw = bb?.getSW?.();
+    const ne = bb?.getNE?.();
+    onViewChangeRef.current(
+      { lat: c.y, lng: c.x },
+      map.getZoom(),
+      sw && ne ? { minLat: sw.y, minLng: sw.x, maxLat: ne.y, maxLng: ne.x } : null,
+    );
+  };
   // 마커 클릭 리스너도 마커마다 한 번만 붙는다. 같은 이유로 ref 를 거친다.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
@@ -96,7 +106,6 @@ export default function NaverMap({
       if (saveTimer.current) clearTimeout(saveTimer.current);
       meMarkerRef.current?.setMap(null);
       accuracyRef.current?.setMap(null);
-      radiusRef.current?.setMap(null);
       for (const { marker } of markers.values()) {
         naver.maps.Event.clearInstanceListeners(marker);
         marker.setMap(null);
@@ -107,7 +116,7 @@ export default function NaverMap({
     };
   }, []);
 
-  // 최초 생성에만 쓴다. 이후 카메라는 focus / radius 가 움직인다.
+  // 최초 생성에만 쓴다. 이후 카메라는 focus 가 움직인다.
   const initial = useRef({ center: initialCenter, zoom: initialZoom });
 
   const initMap = () => {
@@ -129,34 +138,32 @@ export default function NaverMap({
     // 사용자가 움직인 결과를 스토어에 적는다. idle 은 이동·줌이 끝났을 때만 온다.
     naver.maps.Event.addListener(map, "idle", () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        const c = map.getCenter();
-        onViewChangeRef.current({ lat: c.y, lng: c.x }, map.getZoom());
-      }, SAVE_DEBOUNCE_MS);
+      saveTimer.current = setTimeout(() => report(map), SAVE_DEBOUNCE_MS);
     });
+
+    // **첫 조회를 idle 에 맡기지 않는다.** 조회 범위가 곧 화면이라 bounds 가
+    // 없으면 아무것도 안 뜬다. SDK 가 최초 idle 을 언제 쏘는지에 화면이 비고
+    // 안 비고가 갈리면 안 되므로, 만들자마자 한 번 직접 올린다.
+    report(map);
 
     mapRef.current = map;
     setStatus("ready");
   };
 
-  // 반경 Circle 은 지도 준비 후 한 번만 만든다. 이후엔 중심·반지름만 갱신한다.
-  const ensureRadiusCircle = (map: naver.maps.Map) => {
-    if (radiusRef.current) return radiusRef.current;
-    const stroke = readToken("--color-brand-500");
-    radiusRef.current = new naver.maps.Circle({
-      map,
-      // anchor 는 조회 기준점이다. 지도를 옮기면 따라온다 — 원이 그려진 곳과
-      // 조회 결과가 어긋나면 안 되므로 둘은 늘 같은 점을 쓴다.
-      center: new naver.maps.LatLng(anchor.lat, anchor.lng),
-      radius,
-      // 토큰을 못 읽으면 색 옵션을 빼고 SDK 기본값에 맡긴다
-      ...(stroke ? { strokeColor: stroke, fillColor: stroke } : {}),
-      strokeWeight: 1,
-      strokeOpacity: readTokenNumber("--map-circle-stroke-opacity", 0.4),
-      fillOpacity: readTokenNumber("--map-circle-fill-opacity", 0.06),
+  // **지도를 못 띄워도 조회는 나간다.** 조회 범위가 지도에서만 오면 SDK 가
+  // 안 뜨는 순간 목록까지 같이 사라진다 — 지도가 죽었다고 맛집까지 못 볼 이유는 없다.
+  // 처음 중심 둘레로 기본 넓이의 상자를 만들어 대신 올린다.
+  useEffect(() => {
+    if (status === "loading" || status === "ready") return;
+    const c = initial.current.center;
+    const d = FALLBACK_BOUNDS_SPAN_DEG;
+    onViewChangeRef.current(c, initial.current.zoom ?? DEFAULT_ZOOM, {
+      minLat: c.lat - d,
+      minLng: c.lng - d,
+      maxLat: c.lat + d,
+      maxLng: c.lng + d,
     });
-    return radiusRef.current;
-  };
+  }, [status]);
 
   // focus 가 바뀔 때만 옮긴다. 저장된 뷰로 복원한 뒤 위치가 도착했다고 해서
   // 멋대로 튕기면 안 되기 때문에, 옮길지 말지는 MapPanel 이 정한다.
@@ -166,30 +173,8 @@ export default function NaverMap({
     map.panTo(new naver.maps.LatLng(focus.lat, focus.lng));
   }, [status, focus]);
 
-  // 반경 원은 anchor 를 따라간다 — 처음엔 내 위치, 지도를 움직인 뒤로는 지도 중심.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (status !== "ready" || !map) return;
-    ensureRadiusCircle(map).setCenter(
-      new naver.maps.LatLng(anchor.lat, anchor.lng),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, anchor.lat, anchor.lng]);
-
-  // 반경이 바뀌면 반지름과 줌이 함께 움직인다 (WBS 1.3 DoD).
-  // 첫 실행에서 저장된 줌이 있으면 fitBounds 를 건너뛴다 — 복원한 뷰를 덮어쓰지 않으려고.
-  const firstRadiusRun = useRef(true);
-  useEffect(() => {
-    const map = mapRef.current;
-    if (status !== "ready" || !map) return;
-    const circle = ensureRadiusCircle(map);
-    circle.setRadius(radius);
-
-    const skip = firstRadiusRun.current && initial.current.zoom !== null;
-    firstRadiusRun.current = false;
-    if (!skip) map.fitBounds(circle.getBounds(), FIT_BOUNDS_MARGIN);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, radius]);
+  // 조회 범위가 곧 화면이라 반경 원은 그리지 않는다. 원을 두면 "원 밖인데
+  // 마커가 있다" 가 되어 원이 무슨 뜻인지 헷갈린다 (2026-08-09 요청).
 
   // 내 위치: 파란 점 + accuracy 원 (SPEC §4.1).
   // 삭제 후 재생성이 아니라 위치·반지름만 갱신한다 — 깜빡이지 않게 (CLAUDE.md).

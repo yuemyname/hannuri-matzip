@@ -82,7 +82,11 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
   SSR 중 `window.naver` 접근 금지.
 - SDK 파라미터는 **`ncpKeyId`**. `ncpClientId`는 구버전이며 인증 실패한다.
 - 마커 갱신은 **diff**. 전체 `setMap(null)` 후 재생성 금지 (깜빡임).
-- 반경 쿼리는 반드시 `st_dwithin`. `st_distance(...) < radius`는 인덱스를 안 탄다.
+- 지도 조회는 **보이는 영역**이다 (`restaurants_in_bounds`). 반경(`restaurants_within`)은
+  점메추 전용으로 남았다. 반경 쿼리는 반드시 `st_dwithin` — `st_distance(...) < radius`는
+  인덱스를 안 탄다. 영역 쿼리는 `&&` + `st_makeenvelope` 로 GiST 를 탄다.
+- **카메라를 옮기는 이펙트가 조회 결과를 의존성으로 보면 안 된다.** 옮기는 것이 곧
+  재조회라 그 자리에서 무한히 돈다. 한 번만 옮기도록 잠근다.
 
 ### 데이터
 - 서버 상태는 TanStack Query. `useEffect` + `fetch` 수동 조합 금지.

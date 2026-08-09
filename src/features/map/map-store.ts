@@ -7,6 +7,14 @@ import { DEFAULT_RADIUS } from "./config";
 
 export type LatLng = { lat: number; lng: number };
 
+/** 지도 뷰포트. 조회 범위가 반경에서 이걸로 바뀌었다 */
+export type Bounds = {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
+};
+
 /**
  * 지도 뷰 상태. 풀페이지 fallback 으로 나갔다 돌아오면 지도가 새로 마운트되는데,
  * 그때 이전 위치·줌으로 되돌리기 위한 것이다 — zustand 를 쓰는 유일한 이유다 (SHELL.md).
@@ -18,10 +26,13 @@ type MapViewState = {
   /** 마지막으로 본 지도 중심. null 이면 아직 저장된 뷰가 없다 (첫 방문) */
   center: LatLng | null;
   zoom: number | null;
+  /** 지금 보이는 영역. 맛집 조회는 이걸 쓴다. null 이면 아직 지도가 안 떴다 */
+  bounds: Bounds | null;
+  /** 점메추 전용 반경. 지도에는 더 이상 안 쓴다 (지도는 보이는 영역이 곧 범위) */
   radius: number;
   /** 선택된 맛집. 2.3 에서 마커 클릭이 채운다 */
   selectedId: string | null;
-  setView: (center: LatLng, zoom: number) => void;
+  setView: (center: LatLng, zoom: number, bounds: Bounds | null) => void;
   setRadius: (radius: number) => void;
   setSelectedId: (selectedId: string | null) => void;
 };
@@ -31,9 +42,12 @@ export const useMapView = create<MapViewState>()(
     (set) => ({
       center: null,
       zoom: null,
+      bounds: null,
       radius: DEFAULT_RADIUS,
       selectedId: null,
-      setView: (center, zoom) => set({ center, zoom }),
+      // bounds 를 못 읽었으면 예전 값을 지우지 않는다. 지우면 조회가 멈춘다.
+      setView: (center, zoom, bounds) =>
+        set(bounds ? { center, zoom, bounds } : { center, zoom }),
       setRadius: (radius) => set({ radius }),
       setSelectedId: (selectedId) => set({ selectedId }),
     }),

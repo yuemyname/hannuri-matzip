@@ -39,7 +39,6 @@ export function MapPanel({
   } = position;
   const center = useMapView((s) => s.center);
   const zoom = useMapView((s) => s.zoom);
-  const radius = useMapView((s) => s.radius);
   const setView = useMapView((s) => s.setView);
   // 등록 화면의 핀 조정 단계 (SHELL.md §4). 모달 안에 지도를 새로 만들지 않고
   // 이 지도를 그대로 쓴다.
@@ -111,11 +110,7 @@ export function MapPanel({
           initialCenter={center ?? geoCenter}
           initialZoom={zoom}
           focus={focus}
-          // 반경 원은 조회 기준점과 같은 곳에 그린다. 둘이 어긋나면 원 밖의
-          // 마커가 보이거나 원 안이 비어 보인다.
-          anchor={center ?? geoCenter}
           me={coords}
-          radius={radius}
           restaurants={restaurants}
           selectedId={selectedId}
           onSelect={handleSelect}

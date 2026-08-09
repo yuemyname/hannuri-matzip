@@ -173,9 +173,6 @@
   --z-modal: 50;
   --z-toast: 60;
 
-  /* 지도 상수 (SPEC §4.1) */
-  --map-circle-stroke-opacity: 0.4;
-  --map-circle-fill-opacity: 0.06;
 }
 
 @theme inline {

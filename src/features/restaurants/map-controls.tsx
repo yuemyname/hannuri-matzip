@@ -4,10 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { CategoryChip } from "@/components/category-chip";
 import type { Category } from "@/lib/categories";
-import { RADIUS_OPTIONS } from "@/features/map/config";
 
 /**
- * 지도 **위에 떠 있는** 컨트롤 — 반경 토글 + 카테고리 토글(복수 선택) (SPEC §4.1).
+ * 지도 **위에 떠 있는** 컨트롤 — 카테고리 토글(복수 선택) (SPEC §4.1).
+ *
+ * 반경 토글은 없앴다. 조회 범위가 "화면에 보이는 영역" 이 되면서 역할이 겹쳤다 —
+ * 줄을 당기면 반경이 무시되고, 반경을 누르면 줄이 바뀐다. 보이는 데까지가 규칙이다.
  *
  * 아래에 붙은 바가 아니라 플로팅이다. 바로 두면 그만큼 지도가 잘리는데,
  * 컨트롤은 화면의 아래 몇 십 픽셀만 쓰면 되고 그 뒤의 지도는 계속 보이는 게 낫다.
@@ -23,9 +25,6 @@ import { RADIUS_OPTIONS } from "@/features/map/config";
  * "마커가 없다"와 "못 불러왔다"를 구분할 방법이 없다.
  */
 export function MapControls({
-  radius,
-  radiusReady,
-  onRadiusChange,
   categories,
   onToggleCategory,
   onClearCategories,
@@ -36,15 +35,10 @@ export function MapControls({
   isError,
   onRetry,
 }: {
-  radius: number;
-  /** 저장된 반경 복원 전에는 아무것도 눌린 걸로 보이지 않게 한다. 잘못된 값이
-   *  잠깐 눌려 있다가 바뀌면 사용자가 자기가 안 누른 변화를 보게 된다 */
-  radiusReady: boolean;
-  onRadiusChange: (m: number) => void;
   categories: readonly Category[];
   onToggleCategory: (c: Category) => void;
   onClearCategories: () => void;
-  /** 지금 반경 안에 실제로 있는 카테고리와 그 개수. 없는 종류는 칩을 안 그린다 */
+  /** 지금 화면 안에 실제로 있는 카테고리와 그 개수. 없는 종류는 칩을 안 그린다 */
   categoryCounts: ReadonlyMap<Category, number>;
   /** DB 가 정한 순서의 전체 목록. 칩을 세우는 순서를 여기서 가져온다 */
   allCategories: readonly Category[];
@@ -57,8 +51,8 @@ export function MapControls({
   // 평소엔 [전체] [상세] 둘만 두고, 필요할 때만 편다.
   const [open, setOpen] = useState(false);
 
-  // **지금 반경 안에 있는 종류만** 보여준다. 없는 걸 눌러 봐야 0건이다.
-  // 고른 종류는 개수가 0이 돼도 남긴다 — 안 그러면 반경을 좁혔을 때
+  // **지금 화면 안에 있는 종류만** 보여준다. 없는 걸 눌러 봐야 0건이다.
+  // 고른 종류는 개수가 0이 돼도 남긴다 — 안 그러면 지도를 옮겼을 때
   // 칩이 사라져서 필터를 풀 방법이 없어진다.
   const shown = allCategories.filter(
     (c) => (categoryCounts.get(c) ?? 0) > 0 || categories.includes(c),
@@ -89,8 +83,11 @@ export function MapControls({
           가운데 정렬은 안쪽 `w-max mx-auto` 로 한다. 스크롤 컨테이너에
           `justify-center` 를 걸면 **넘칠 때 왼쪽이 잘려 나가고 스크롤로도 못 닿는다.**
           w-max 는 다 들어가면 가운데, 넘치면 왼쪽부터 정상 스크롤이다. */}
-      <div className="pointer-events-auto -mx-3 overflow-x-auto px-3 pb-1">
-        <div className="mx-auto flex w-max gap-2">
+      {/* **스크롤 상자 자체는 포인터를 안 받는다.** 이 줄은 화면 폭을 다 쓰므로,
+          받게 두면 칩이 없는 좌우 빈 자리에서도 지도를 못 끈다 — 지도 아래쪽
+          한 줄이 통째로 죽는다. 칩만 켜 두면 칩을 잡고 끄는 가로 스크롤은 그대로다. */}
+      <div className="pointer-events-none -mx-3 overflow-x-auto px-3 pb-1">
+        <div className="pointer-events-auto mx-auto flex w-max gap-2">
           <button
             type="button"
             aria-pressed={categories.length === 0}
@@ -132,29 +129,6 @@ export function MapControls({
             </button>
           )}
         </div>
-      </div>
-
-      {/* 반경은 카테고리 아래. 손가락에 제일 가까운 줄에 제일 자주 만지는 걸 둔다 */}
-      <div
-        role="group"
-        aria-label="반경"
-        className="pointer-events-auto flex gap-1 self-center rounded-chip border border-border bg-background p-1 shadow-pop"
-      >
-        {RADIUS_OPTIONS.map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={radiusReady && radius === m}
-            onClick={() => onRadiusChange(m)}
-            className={`tnum rounded-chip px-2.5 py-1 text-label ${
-              radiusReady && radius === m
-                ? "bg-primary text-primary-foreground"
-                : "text-foreground hover:bg-muted"
-            }`}
-          >
-            {m}m
-          </button>
-        ))}
       </div>
     </div>
   );
@@ -216,7 +190,7 @@ function Status({
         <span className="text-muted-foreground">
           {hasFilters
             ? "고른 종류에는 없어요"
-            : "이 반경에는 아직 등록된 곳이 없어요"}
+            : "이 근처에는 아직 등록된 곳이 없어요"}
         </span>
         {/* 빈 상태는 행동 유도 (CLAUDE.md). 종류를 좁혀서 빈 거면 등록이 답이 아니다 */}
         {!hasFilters && (

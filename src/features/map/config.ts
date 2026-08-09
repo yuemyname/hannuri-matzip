@@ -23,25 +23,23 @@ export const FALLBACK_CENTER = {
 
 export const DEFAULT_ZOOM = 16;
 
-/** 반경 토글 (SPEC §4.1). 100m 넘게 걸어가서 먹는 일이 없다는 판단으로 200m 가 상한 */
-export const RADIUS_OPTIONS = [30, 50, 100, 200] as const;
 /**
- * 처음 들어온 사람이 보는 반경. 넓은 쪽에서 시작해 좁히는 게 낫다 —
- * 좁게 시작하면 "등록된 곳이 없어요" 만 보고 나가는 사람이 생긴다.
+ * 지도를 못 띄웠을 때 대신 쓸 조회 범위(도 단위 반쪽). 0.004도 ≈ 440m 로,
+ * 기본 줌에서 화면에 들어오는 넓이와 비슷하다.
+ *
+ * 조회 범위가 지도에서만 온다면 SDK 가 안 뜨는 순간(키 없음·인증 실패·네트워크
+ * 차단) 앱이 통째로 빈다 — 지도도 없고 목록도 없다. 그건 너무 크게 지는 것이다.
  */
-export const DEFAULT_RADIUS = 200;
+export const FALLBACK_BOUNDS_SPAN_DEG = 0.004;
 
 /**
- * fitBounds 여백(px). 없으면 반경 원이 화면 끝에 딱 붙어서 원으로 안 보이고
- * 그냥 확대된 지도처럼 읽힌다. 위아래는 배너·반경 토글에 가리지 않을 만큼 더 준다.
- * 지도 API 에 넘기는 값이라 CSS 토큰이 아니다.
+ * 반경 토글 — **점메추 전용이다.** 지도는 "보이는 영역" 이 곧 조회 범위라
+ * 반경을 안 쓴다. 점메추는 화면과 무관하게 "내 위치에서 N m" 로 후보를 고른다.
+ * 100m 넘게 걸어가서 먹는 일이 없다는 판단으로 200m 가 상한.
  */
-export const FIT_BOUNDS_MARGIN = {
-  top: 56,
-  bottom: 56,
-  left: 24,
-  right: 24,
-};
+export const RADIUS_OPTIONS = [30, 50, 100, 200] as const;
+/** 점메추가 처음 여는 반경. 넓은 쪽에서 시작해 좁히는 게 낫다 */
+export const DEFAULT_RADIUS = 200;
 
 /**
  * 지도 SDK 는 CSS 를 모른다. 색·투명도를 JS 값으로 넘겨야 해서 토큰을 읽어온다.
@@ -56,10 +54,4 @@ export function readToken(name: string): string | undefined {
     .getPropertyValue(name)
     .trim();
   return v || undefined;
-}
-
-/** 투명도처럼 숫자로 넘겨야 하는 토큰. 숫자 기본값은 hex 가 아니라 그대로 둔다. */
-export function readTokenNumber(name: string, fallback: number): number {
-  const n = Number(readToken(name));
-  return Number.isFinite(n) ? n : fallback;
 }

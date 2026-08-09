@@ -10,7 +10,7 @@ import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
 import { metersBetween } from "@/features/map/geo";
 import type { Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
-import { useNearby } from "./use-nearby";
+import { useInBounds } from "./use-nearby";
 import { MapControls } from "./map-controls";
 import { RestaurantCard } from "./restaurant-card";
 import type { SelectSource } from "./select-source";
@@ -141,9 +141,7 @@ function MapActions() {
 export function MainView() {
   useFirstRunWelcome();
   const position = useCurrentPosition();
-  const radius = useMapView((s) => s.radius);
   const selectedId = useMapView((s) => s.selectedId);
-  const setRadius = useMapView((s) => s.setRadius);
   const setSelectedId = useMapView((s) => s.setSelectedId);
 
   // 어디서 고른 건지 (WBS 2.5). 출처에 따라 반응이 달라야 한다:
@@ -170,18 +168,15 @@ export function MainView() {
   // 칩을 세우는 순서는 DB 가 정한다 (categories.sort_order).
   const categoryList = useCategories();
 
-  // **조회 기준점은 지도 중심이다.** 내 위치에 못 박아 두면 지도를 옮겨도 거기
-  // 맛집이 안 보인다 — "여기 뭐 있지" 하고 끌어 본 사람에게 아무것도 안 나온다.
-  // 반경 원도 같은 점을 쓴다 (MapPanel). 원이 그려진 곳과 결과가 어긋나면 안 된다.
-  // 아직 지도를 안 움직였으면 저장된 중심이 없으니 내 위치로 시작한다.
-  const mapCenter = useMapView((s) => s.center);
-  const anchor = mapCenter ?? position.center;
+  // **조회 범위는 화면에 보이는 영역이다.** 반경 원 안만 보여 주면 "여기 뭐 있지"
+  // 하고 끌어 본 사람에게 화면 절반이 비어 보인다. 줄을 당겨 넓히면 더 보이고
+  // 좁히면 덜 보인다 — 보이는 데까지가 곧 규칙이라 원도 반경 토글도 없앴다.
+  const bounds = useMapView((s) => s.bounds);
 
   // **카테고리를 서버에 넘기지 않는다.** 넘기면 서버가 걸러서 오므로, 안 고른
-  // 종류가 반경 안에 몇 곳인지 알 수 없다 — 칩에 개수를 못 붙이고 "없는 종류"도
-  // 못 가린다. 반경 안 결과는 많아야 수십 건이라 거르기는 여기서 해도 된다.
-  // (정렬을 클라이언트에서 하기로 한 것과 같은 이유다.)
-  const query = useNearby(hydrated ? anchor : null, radius);
+  // 종류가 화면 안에 몇 곳인지 알 수 없다 — 칩에 개수를 못 붙이고 "없는 종류"도
+  // 못 가린다. 화면 안 결과는 많아야 수십 건이라 거르기는 여기서 해도 된다.
+  const query = useInBounds(hydrated ? bounds : null);
 
   // 서버가 준 `distance_m` 은 **조회 기준점에서의 거리**다. 지도를 옮기면 그게
   // 화면 한복판 기준이 되어 버려서, 걸어갈 거리를 묻는 사람에게 거짓말이 된다.
@@ -261,9 +256,6 @@ export function MainView() {
           )}
 
           <MapControls
-            radius={radius}
-            radiusReady={hydrated}
-            onRadiusChange={setRadius}
             categories={categories}
             onToggleCategory={toggleCategory}
             onClearCategories={clearCategories}

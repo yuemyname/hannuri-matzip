@@ -63,6 +63,44 @@ function toRestaurant(row: unknown): NearbyRestaurant | null {
   };
 }
 
+/** 지도 뷰포트. 남서(min) ~ 북동(max) 두 모서리 */
+export type Bounds = {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
+};
+
+/**
+ * 지금 보이는 영역의 맛집 (`restaurants_in_bounds`).
+ *
+ * 반경이 아니라 뷰포트가 기준이다 — 줄을 당겨 넓히면 더 보이고 좁히면 덜 보인다.
+ * 거리는 안 받는다. 화면에 적히는 거리는 내 위치 기준으로 다시 재기 때문이다.
+ */
+export async function fetchInBounds(
+  b: Bounds,
+  categories?: readonly Category[],
+): Promise<NearbyRestaurant[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  await ensureSession();
+
+  const { data, error } = await supabase.rpc("restaurants_in_bounds", {
+    p_min_lat: b.minLat,
+    p_min_lng: b.minLng,
+    p_max_lat: b.maxLat,
+    p_max_lng: b.maxLng,
+    p_categories: categories?.length ? [...categories] : null,
+  });
+  if (error) throw error;
+
+  const rows: unknown = data;
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map(toRestaurant)
+    .filter((r): r is NearbyRestaurant => r !== null);
+}
+
 export async function fetchNearby({
   lat,
   lng,

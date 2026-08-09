@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import type { Coords } from "./use-current-position";
-import type { LatLng } from "./map-store";
+import type { Bounds, LatLng } from "./map-store";
 
 /**
  * 지도는 SSR 하지 않는다 — 서버에서 window.naver 에 닿으면 안 된다 (SPEC §1.1).
@@ -28,14 +28,12 @@ export type MapViewProps = {
   initialZoom: number | null;
   /** 여기로 옮기라는 신호. 값이 바뀔 때만 panTo 한다 */
   focus: LatLng | null;
-  /** 반경(=조회)의 기준점. 처음엔 내 위치, 지도를 움직이면 지도 중심을 따라온다 */
-  anchor: LatLng;
   me: Coords | null;
-  radius: number;
   restaurants: NearbyRestaurant[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onViewChange: (center: LatLng, zoom: number) => void;
+  /** 이동·줌이 끝날 때. bounds 가 곧 조회 범위다 (못 읽으면 null) */
+  onViewChange: (center: LatLng, zoom: number, bounds: Bounds | null) => void;
 };
 
 export function MapView(props: MapViewProps) {
