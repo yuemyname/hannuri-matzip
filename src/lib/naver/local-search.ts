@@ -93,7 +93,30 @@ function toCandidate(row: unknown): PlaceCandidate | null {
   };
 }
 
-export async function searchLocal(query: string): Promise<PlaceCandidate[]> {
+/**
+ * 상호 검색.
+ *
+ * **이 API 는 좌표를 안 받는다.** 파라미터가 `query` / `display` 뿐이라
+ * "내 근처에서 찾아줘" 를 요청할 방법이 없고, 그냥 "써브웨이" 로 치면 전국 기준
+ * 인기순이라 시청 근처 것들이 올라온다. 그래서 `area`("광진구 구의동") 를 받아
+ * **검색어 앞에 붙인다.** 그게 근처로 좁히는 유일한 수단이다.
+ *
+ * 지역명을 붙이면 0건이 되는 경우가 있다 — 상호에 지역이 안 붙는 체인점이나
+ * 이미 주소까지 다 친 질의가 그렇다. 그때는 원래 질의로 한 번 더 찾는다.
+ * 추가 호출은 0건일 때만 나가므로 평소 쿼터는 그대로다.
+ */
+export async function searchLocal(
+  query: string,
+  area?: string | null,
+): Promise<PlaceCandidate[]> {
+  if (area) {
+    const near = await callSearch(`${area} ${query}`);
+    if (near.length > 0) return near;
+  }
+  return callSearch(query);
+}
+
+async function callSearch(query: string): Promise<PlaceCandidate[]> {
   const id = process.env.NAVER_SEARCH_CLIENT_ID;
   const secret = process.env.NAVER_SEARCH_CLIENT_SECRET;
   if (!id || !secret) {

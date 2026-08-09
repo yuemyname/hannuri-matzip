@@ -44,6 +44,9 @@ export function MapPanel({
   // 등록 화면의 핀 조정 단계 (SHELL.md §4). 모달 안에 지도를 새로 만들지 않고
   // 이 지도를 그대로 쓴다.
   const pinning = usePinMode((s) => s.active);
+  // 등록 화면이 "여기로 옮겨라" 하고 넘긴 검색 좌표 (SPEC §4.4-3).
+  const pinTarget = usePinMode((s) => s.target);
+  const clearPinTarget = usePinMode((s) => s.clearTarget);
 
   // 복원이 끝나야 지도를 만든다. 안 그러면 기본값(50m)으로 한 번 만들어졌다가
   // 복원 직후 200m 로 fitBounds 가 다시 돌아 카메라가 튄다.
@@ -68,6 +71,18 @@ export function MapPanel({
   };
 
   const handleSelect = (id: string) => onSelect(id, "map");
+
+  // 등록의 핀 단계로 들어오면 검색한 가게 좌표로 한 번 옮긴다.
+  // **안 옮기면 핀이 내가 보던 자리에 찍힌다** — 그러면 미세조정이 아니라
+  // 사용자가 가게를 지도에서 처음부터 찾아가야 한다 (SPEC §4.4-3).
+  //
+  // 옮긴 뒤 곧바로 비운다. 안 비우면 사용자가 핀을 끌어 놓은 다음 이 이펙트가
+  // 또 돌 때 검색 좌표로 되돌려 버린다.
+  useEffect(() => {
+    if (!pinTarget) return;
+    setFocus(pinTarget);
+    clearPinTarget();
+  }, [pinTarget, clearPinTarget]);
 
   // 카메라는 **앱 밖에서 고른 경우에만** 옮긴다 (점메추 [여기로 갈게요], WBS 4.4).
   // 마커를 눌렀을 때 옮기면 방금 누른 것으로 지도가 튄다 (WBS 2.5).

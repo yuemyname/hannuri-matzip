@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CategoryChip } from "@/components/category-chip";
@@ -10,6 +10,7 @@ import { Distance } from "@/components/distance";
 import { CATEGORIES, type Category } from "@/lib/categories";
 import { useMapView } from "@/features/map/map-store";
 import { useCurrentPosition } from "@/features/map/use-current-position";
+import { areaNameOf } from "@/features/map/reverse-geocode";
 import { usePinMode } from "./pin-store";
 import { usePlaceSearch, type PlaceCandidate } from "./use-place-search";
 import {
@@ -40,7 +41,8 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   const qc = useQueryClient();
   const { center: geoCenter } = useCurrentPosition();
   const mapCenter = useMapView((s) => s.center);
-  const setPinMode = usePinMode((s) => s.setActive);
+  const startPin = usePinMode((s) => s.start);
+  const stopPin = usePinMode((s) => s.stop);
 
   const [step, setStep] = useState<Step>("search");
   const [query, setQuery] = useState("");
@@ -61,14 +63,49 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   );
 
   const debounced = useDebounced(query, 400);
-  const search = usePlaceSearch(debounced);
+
+  // 지역검색 API 가 좌표를 안 받는다. 지금 보고 있는 곳의 행정동을 얻어
+  // 검색어에 붙이는 게 근처로 좁히는 유일한 방법이다 (SPEC §4.4).
+  // 못 얻으면 null — 예전처럼 전국 기준으로 찾는다. 등록을 막지는 않는다.
+  const here = mapCenter ?? geoCenter;
+  const { data: area = null } = useQuery({
+    queryKey: ["area", here.lat.toFixed(3), here.lng.toFixed(3)],
+    queryFn: () => areaNameOf(here),
+    // 소수점 3자리(약 100m)로 묶는다. 지도를 조금 움직일 때마다 다시 부를 이유가 없다.
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
+
+  const search = usePlaceSearch(debounced, area);
+
+  // 지역명을 붙여도 먼 데가 섞여 온다 (체인점은 상호에 지역이 안 붙는다).
+  // 가까운 순으로 세워 두면 눈으로 고르기 쉽다.
+  const places = useMemo(() => {
+    const list = search.data?.places ?? [];
+    return [...list].sort((a, b) => distanceM(here, a) - distanceM(here, b));
+  }, [search.data, here]);
 
   // 핀 단계에 들어가고 나갈 때만 배경 지도에 신호를 준다.
   // 모달이 언마운트될 때 반드시 꺼야 한다 — 안 그러면 메인에 핀이 남는다.
+  //
+  // 들어갈 때 **검색 좌표를 함께 넘겨 지도를 그리로 옮긴다.** 안 그러면 핀이
+  // 내가 보던 자리(내 위치·사무실)에 찍혀서, 미세조정이 아니라 가게를 지도에서
+  // 처음부터 찾아가야 한다. 직접 입력이라 좌표를 모르면 null 을 넘긴다.
+  //
+  // `pickedRef` 로 읽는 이유: 이 이펙트는 `step` 이 바뀔 때만 돌아야 한다.
+  // `picked` 를 의존성에 넣으면 핀을 끌어 놓은 뒤 무언가 다시 렌더될 때
+  // 지도가 검색 좌표로 되돌아간다.
+  const pickedRef = useRef(picked);
+  pickedRef.current = picked;
   useEffect(() => {
-    setPinMode(step === "pin");
-    return () => setPinMode(false);
-  }, [step, setPinMode]);
+    if (step !== "pin") {
+      stopPin();
+      return;
+    }
+    const p = pickedRef.current;
+    startPin(p ? { lat: p.lat, lng: p.lng } : null);
+    return () => stopPin();
+  }, [step, startPin, stopPin]);
 
   const name = picked?.name ?? manualName.trim();
   const coords =
@@ -126,9 +163,9 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
           </p>
         )}
 
-        {search.data && search.data.places.length > 0 && (
+        {places.length > 0 && (
           <ul className="flex flex-col gap-2">
-            {search.data.places.map((p) => (
+            {places.map((p) => (
               <li key={`${p.name}-${p.lat}-${p.lng}`}>
                 <button
                   type="button"
@@ -143,7 +180,13 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
                       : "border-border hover:bg-accent"
                   }`}
                 >
-                  <span className="text-subtitle">{p.name}</span>
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 truncate text-subtitle">
+                      {p.name}
+                    </span>
+                    {/* 어디가 가까운지 글자로 적는다. 순서만으로는 알기 어렵다 */}
+                    <Distance meters={distanceM(here, p)} />
+                  </span>
                   <span className="text-caption text-muted-foreground">
                     {p.roadAddress || p.address}
                   </span>
@@ -160,8 +203,8 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
 
         {debounced.length >= 2 &&
           !search.isFetching &&
-          search.data?.places.length === 0 &&
-          !search.data.error && (
+          places.length === 0 &&
+          !search.data?.error && (
             <p role="status" className="text-caption text-muted-foreground">
               검색 결과가 없어요. 이름을 그대로 쓰고 위치는 직접 잡으면 돼요
             </p>

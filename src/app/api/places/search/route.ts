@@ -16,12 +16,17 @@ const MAX_QUERY_LEN = 60;
 
 export async function POST(request: Request) {
   let query: unknown;
+  let area: unknown;
   try {
     const body: unknown = await request.json();
-    query =
+    const rec =
       typeof body === "object" && body !== null
-        ? (body as { query?: unknown }).query
+        ? (body as { query?: unknown; area?: unknown })
         : null;
+    query = rec?.query ?? null;
+    // 클라이언트가 역지오코딩으로 얻은 행정동 ("광진구 구의동").
+    // 이 API 는 좌표를 못 받아서, 근처로 좁히는 유일한 수단이 검색어에 붙이는 것이다.
+    area = rec?.area ?? null;
   } catch {
     return NextResponse.json(
       { error: "요청 형식이 올바르지 않아요" },
@@ -44,7 +49,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const places = await searchLocal(query.trim());
+    const places = await searchLocal(
+      query.trim(),
+      // 길거나 이상한 값이 그대로 질의에 붙지 않게 여기서 자른다
+      typeof area === "string" && area.trim().length > 0
+        ? area.trim().slice(0, 30)
+        : null,
+    );
     return NextResponse.json({ places });
   } catch (e) {
     const status = e instanceof LocalSearchError ? e.status : 502;
