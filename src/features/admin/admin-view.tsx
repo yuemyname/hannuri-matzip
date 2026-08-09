@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/alert-dialog";
 import { CATEGORY_MAX_LEN } from "@/lib/categories";
+import { MOODS, toMoods, type Mood } from "@/lib/moods";
 import {
   addCategory,
   adminLogin,
@@ -333,6 +334,8 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
   const [name, setName] = useState(restaurant.name);
   const [category, setCategory] = useState(restaurant.category);
   const [memo, setMemo] = useState(restaurant.memo ?? "");
+  const initialMoods = toMoods(restaurant.mood_tags);
+  const [moods, setMoods] = useState<Mood[]>(initialMoods);
 
   const done = () => {
     void qc.invalidateQueries({ queryKey: ["admin", "restaurants"] });
@@ -342,7 +345,7 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
 
   const save = useMutation({
     mutationFn: () =>
-      patchRestaurant({ id: restaurant.id, name, category, memo }),
+      patchRestaurant({ id: restaurant.id, name, category, memo, moodTags: moods }),
     onSuccess: done,
   });
   const remove = useMutation({
@@ -353,7 +356,8 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
   const dirty =
     name !== restaurant.name ||
     category !== restaurant.category ||
-    memo !== (restaurant.memo ?? "");
+    memo !== (restaurant.memo ?? "") ||
+    moods.join() !== initialMoods.join();
 
   return (
     <div className={ROW}>
@@ -388,6 +392,34 @@ function RestaurantRow({ restaurant }: { restaurant: AdminRestaurant }) {
           {restaurant.road_address ?? "주소 없음"}
         </span>
       </div>
+      {/* 상황 태그 — 점메추가 시간대별 가중치를 여기서 읽는다 (SPEC §3.2) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-label">자리</span>
+        {MOODS.map((m) => {
+          const on = moods.includes(m);
+          return (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={on}
+              aria-label={`${restaurant.name} ${m}`}
+              onClick={() =>
+                setMoods((prev) =>
+                  prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+                )
+              }
+              className={`rounded-chip px-2.5 py-1 text-label ${
+                on
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border bg-background hover:bg-muted"
+              }`}
+            >
+              {m}
+            </button>
+          );
+        })}
+      </div>
+
       <Input
         value={memo}
         onChange={(e) => setMemo(e.target.value)}

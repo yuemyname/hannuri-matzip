@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isMood, type Mood } from "@/lib/moods";
 import { badRequest, guard, readBody } from "../guard";
 
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ export async function GET() {
 
   const { data, error } = await g.supabase
     .from("restaurants")
-    .select("id, name, category, road_address, price_range, memo, created_at")
+    .select("id, name, category, road_address, price_range, memo, mood_tags, created_at")
     .order("created_at", { ascending: false })
     .limit(PAGE);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -51,6 +52,12 @@ export async function PATCH(request: Request) {
         return badRequest("가격대는 1~4 여야 해요");
       patch.price_range = p;
     }
+  }
+  if (body.moodTags !== undefined) {
+    if (!Array.isArray(body.moodTags) || !body.moodTags.every(isMood))
+      return badRequest("모르는 상황 태그예요");
+    // 같은 값이 두 번 들어가도 DB 제약은 통과하지만, 화면에 두 번 뜬다.
+    patch.mood_tags = [...new Set(body.moodTags as Mood[])];
   }
   if (body.memo !== undefined) {
     if (body.memo !== null && typeof body.memo !== "string")

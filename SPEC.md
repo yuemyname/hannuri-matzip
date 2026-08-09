@@ -259,8 +259,9 @@ create or replace function pick_restaurant(
   p_meal_type text default 'lunch',
   p_categories text[] default null,
   p_max_price smallint default null,
-  p_exclude_days integer default 7
-) returns table (...)  -- restaurants_within 과 동일 컬럼
+  p_exclude_days integer default 7,
+  p_exclude_ids uuid[] default null       -- 세션 내 [다시 뽑기] 가 같은 곳을 안 주게
+) returns table (...)  -- restaurants_within 컬럼 + mood_tags
 ```
 
 로직:
@@ -268,8 +269,37 @@ create or replace function pick_restaurant(
 2. `p_categories`, `p_max_price` 필터
 3. 최근 `p_exclude_days`일 내 해당 유저가 `accepted = true`로 기록한 맛집 제외
 4. 남은 후보가 0이면 → 3번 제외 조건 해제 후 재시도 (그래도 0이면 빈 결과)
-5. 가중치 랜덤: `weight = (avg_rating + 1) ^ 1.5` — 평점 높은 곳이 더 자주, 하지만 신규(평점 0)도 뽑힘
+5. 가중치 랜덤 — **세 항목의 곱** (2026-08-09 개정, 이전은 `(avg_rating+1)^1.5`)
+
+   ```
+   weight = score^2  ×  mood  ×  near
+   ```
+
+   - **`score` — 평점 신뢰도 보정.** `(avg×n + 3.5×3) / (n+3)`.
+     리뷰 1개짜리 별 5개가 리뷰 20개 4.5를 이기면 안 된다. 전체 평균(3.5) 쪽으로
+     끌어당기되 리뷰가 쌓일수록 제 점수에 가까워진다. **리뷰가 없으면 정확히 3.5** —
+     이전 식에서는 신규가 weight 1이라 1점짜리(2.83)보다도 불리했다. 아무도 안 가
+     보면 영영 안 뽑히는 구조였다.
+   - **`mood` — 시간대별 상황 가중치.** `restaurants.mood_tags` 를 본다.
+     - 저녁: 회식 ×1.6, 가벼움 ×1.4, 술 ×1.2, 혼밥 ×0.8
+     - 점심: 혼밥 ×1.5, 가벼움 ×1.2, 회식 ×0.5, 술 ×0.4
+
+     태그가 없으면 1.0 — 어느 쪽으로도 안 기운다. `p_meal_type` 이 로그용을
+     넘어 실제로 후보를 가르는 유일한 지점이다.
+   - **`near` — 가까울수록 조금 유리.** `1 + 0.3×(1 − distance/radius)`.
+     최대 1.3배까지만. 거리로 결정되면 그건 추천이 아니라 정렬이다.
+
 6. `order by -ln(random()) / weight limit 1` (가중 샘플링 표준 트릭)
+
+**상황 태그 (`mood_tags`)** — `혼밥 / 가벼움 / 회식 / 술` 네 개 고정. 어휘를 DB 제약으로
+막는다. 자유 입력이면 "회식"·"회식용"·"단체"가 섞여서 가중치가 안 걸린다.
+카테고리와 달리 **목록이 코드(`src/lib/moods.ts`)에 있다** — 추천 식의 계수와 1:1로
+묶여 있어서, 값이 늘면 `pick_restaurant` 의 case 문도 같이 늘어야 하기 때문이다.
+DB 표로 빼면 화면에서 추가할 수는 있는데 아무 가중치도 안 붙는 죽은 태그가 된다.
+
+결과 카드는 **이 시간대에 밀어준 태그만** 이유로 적는다 ("저녁이라 회식·술 쪽을 더
+자주 뽑아요"). 안 밀어준 태그까지 적으면 설명이 아니라 나열이고, 점심에 "회식이라
+골랐어요"라고 적으면 그건 거짓말이다.
 
 **결정론 금지**: 서버에서 `random()` 사용. 클라이언트 룰렛 애니메이션은 연출이며,
 최종 결과는 서버 응답값으로 고정한다 (애니메이션이 결과를 결정하지 않음).

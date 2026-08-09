@@ -655,14 +655,15 @@ begin
 end
 $$;
 
--- 20회 호출: 결과가 분산되고, 평점 높은 곳이 더 자주 나온다 (WBS 4.1 DoD)
+-- 여러 번 호출: 결과가 분산되고, 평점 높은 곳이 더 자주 나온다 (WBS 4.1 DoD)
 do $$
 declare
+  RUNS constant int := 300;   -- 무작위라 표본이 작으면 그날그날 다른 답이 나온다
   hit text; n_distinct int := 0;
   n_high int := 0; n_low int := 0; n_new int := 0; i int;
 begin
   create temp table _pick_runs(name text) on commit drop;
-  for i in 1..20 loop
+  for i in 1..RUNS loop
     select p.name into hit
       from pick_restaurant(35.5, 128.5, 200, 'lunch') p;
     insert into _pick_runs values (hit);
@@ -674,15 +675,120 @@ begin
   select count(*) into n_new  from _pick_runs where name = '픽_신규';
 
   if n_distinct < 2 then
-    raise exception '20회 호출에 %종만 나왔다 — 결정론적이다', n_distinct;
+    raise exception '%회 호출에 %종만 나왔다 — 결정론적이다', RUNS, n_distinct;
   end if;
-  -- weight: 고평점 6^1.5≈14.7 / 신규 1 / 저평점 2^1.5≈2.83.
-  -- 기대값은 고평점 ~79%. 20회에서 저평점보다 적게 나올 확률은 사실상 0 이다.
+
+  -- 신뢰도 보정 후 weight = score^2, score = (avg*n + 3.5*3)/(n+3):
+  --   고평점(5점 1개) 3.875^2 ≈ 15.0 / 신규(리뷰 없음) 3.5^2 = 12.25 / 저평점(1점 1개) 2.875^2 ≈ 8.3
   if n_high <= n_low then
     raise exception '평점 가중이 안 걸린다 (고평점 %회 <= 저평점 %회)', n_high, n_low;
   end if;
-  raise notice 'pick_restaurant 20회 — 고평점 %, 저평점 %, 신규 % (%종)',
-    n_high, n_low, n_new, n_distinct;
+
+  -- **신규가 꼴찌가 아니다.** 예전 식(avg+1)^1.5 에서는 리뷰 없는 곳이 weight 1 로
+  -- 1점짜리(2.83)보다도 불리했다 — 아무도 안 가 보면 영영 안 뽑히는 구조였다.
+  -- 지금은 리뷰가 없으면 전체 평균(3.5)에서 시작하므로 1점짜리보다 자주 나온다.
+  if n_new <= n_low then
+    raise exception '리뷰 없는 곳이 1점짜리보다 안 나온다 (신규 %회 <= 저평점 %회)',
+      n_new, n_low;
+  end if;
+
+  raise notice 'pick_restaurant %회 — 고평점 %, 저평점 %, 신규 % (%종)',
+    RUNS, n_high, n_low, n_new, n_distinct;
+end
+$$;
+
+-- ── 8b. 상황 태그 + 시간대 가중치 (2026-08-09) ────────────────────────
+-- "저녁엔 가벼운 것과 회식 위주" 를 태그로 판단한다. 두 곳을 같은 자리·같은
+-- 조건(리뷰 없음)으로 두고 태그만 다르게 해서, 시간대에 따라 뒤집히는지 본다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+begin
+  insert into restaurants(id, name, category, location, created_by, mood_tags)
+  values
+    ('bbbb0001-0000-0000-0000-000000000001', '무드_회식', '한식',
+     st_makepoint(128.6, 35.6)::geography, uid, array['회식']),
+    ('bbbb0002-0000-0000-0000-000000000002', '무드_혼밥', '한식',
+     st_makepoint(128.6, 35.6)::geography, uid, array['혼밥']);
+end
+$$;
+
+-- 어휘 밖의 값은 안 들어간다. "회식"·"회식용"·"단체" 가 섞이면 가중치가 안 걸린다.
+do $$
+begin
+  begin
+    update restaurants set mood_tags = array['단체']
+     where id = 'bbbb0001-0000-0000-0000-000000000001';
+    raise exception '어휘 밖의 mood_tag(''단체'')가 거부되지 않았다';
+  exception when check_violation then null;
+  end;
+end
+$$;
+
+do $$
+declare
+  RUNS constant int := 300;
+  i int; hit text;
+  d_group int := 0; d_solo int := 0;
+  l_group int := 0; l_solo int := 0;
+begin
+  for i in 1..RUNS loop
+    select p.name into hit from pick_restaurant(35.6, 128.6, 200, 'dinner') p;
+    if hit = '무드_회식' then d_group := d_group + 1;
+    elsif hit = '무드_혼밥' then d_solo := d_solo + 1; end if;
+
+    select p.name into hit from pick_restaurant(35.6, 128.6, 200, 'lunch') p;
+    if hit = '무드_회식' then l_group := l_group + 1;
+    elsif hit = '무드_혼밥' then l_solo := l_solo + 1; end if;
+  end loop;
+
+  -- 저녁: 회식 1.6 / 혼밥 0.8 → 기대 2:1. 300회에서 뒤집힐 일은 사실상 없다.
+  if d_group <= d_solo then
+    raise exception '저녁에 회식집이 더 안 나온다 (회식 %회 <= 혼밥 %회)', d_group, d_solo;
+  end if;
+  -- 점심: 혼밥 1.5 / 회식 0.5 → 기대 3:1
+  if l_solo <= l_group then
+    raise exception '점심에 혼밥집이 더 안 나온다 (혼밥 %회 <= 회식 %회)', l_solo, l_group;
+  end if;
+  raise notice '시간대 가중치 — 저녁 회식 %/혼밥 %, 점심 혼밥 %/회식 %',
+    d_group, d_solo, l_solo, l_group;
+end
+$$;
+
+-- 뽑힌 결과가 태그를 함께 준다. 화면이 "왜 이걸 골랐는지" 를 보여주려면 필요하다.
+do $$
+declare tags text[];
+begin
+  select p.mood_tags into tags from pick_restaurant(35.6, 128.6, 200, 'dinner') p;
+  if tags is null or array_length(tags, 1) is null then
+    raise exception 'pick_restaurant 가 mood_tags 를 안 준다';
+  end if;
+end
+$$;
+
+-- 가까운 쪽이 조금 유리하다. 반경 안이면 5m 든 195m 든 똑같던 것을 고쳤다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+  RUNS constant int := 300;
+  i int; hit text; n_near int := 0; n_far int := 0;
+begin
+  insert into restaurants(id, name, category, location, created_by)
+  values
+    ('cccc0001-0000-0000-0000-000000000001', '거리_가까움', '한식',
+     st_makepoint(128.7, 35.7)::geography, uid),
+    ('cccc0002-0000-0000-0000-000000000002', '거리_멂', '한식',
+     st_makepoint(128.7021, 35.7)::geography, uid);   -- 약 190m
+
+  for i in 1..RUNS loop
+    select p.name into hit from pick_restaurant(35.7, 128.7, 200, 'lunch') p;
+    if hit = '거리_가까움' then n_near := n_near + 1;
+    elsif hit = '거리_멂' then n_far := n_far + 1; end if;
+  end loop;
+
+  -- 최대 1.3배까지만 준다. 기대 약 1.3:1 이라 300회면 안전하다.
+  if n_near <= n_far then
+    raise exception '가까운 쪽이 유리하지 않다 (가까움 %회 <= 멂 %회)', n_near, n_far;
+  end if;
+  raise notice '거리 가중치 — 가까움 %, 멂 %', n_near, n_far;
 end
 $$;
 

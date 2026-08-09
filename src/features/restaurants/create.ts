@@ -3,6 +3,7 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { ensureSession } from "@/lib/supabase/session";
 import type { Category } from "@/lib/categories";
+import type { Mood } from "@/lib/moods";
 
 export type NewMenu = {
   name: string;
@@ -21,6 +22,7 @@ export type NewRestaurant = {
   phone: string | null;
   memo: string | null;
   naverPlaceUrl: string | null;
+  moodTags: Mood[];
   menus: NewMenu[];
 };
 
@@ -105,6 +107,7 @@ export async function createRestaurant(input: NewRestaurant): Promise<string> {
       phone: input.phone,
       memo: input.memo,
       naver_place_url: input.naverPlaceUrl,
+      mood_tags: input.moodTags,
       created_by: userId,
     })
     .select("id")

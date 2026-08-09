@@ -3,6 +3,7 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { ensureSession } from "@/lib/supabase/session";
 import { isCategory, type Category } from "@/lib/categories";
+import { toMoods } from "@/lib/moods";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import { fetchSignatureMenu } from "@/features/restaurants/menu-api";
 
@@ -50,6 +51,7 @@ function toRestaurant(row: unknown): NearbyRestaurant | null {
     distanceM: Number.isFinite(num(r.distance_m)) ? num(r.distance_m) : 0,
     avgRating: Number.isFinite(num(r.avg_rating)) ? num(r.avg_rating) : 0,
     reviewCount: Number.isFinite(num(r.review_count)) ? num(r.review_count) : 0,
+    moodTags: toMoods(r.mood_tags),
   };
 }
 

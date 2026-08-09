@@ -3,6 +3,7 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { ensureSession } from "@/lib/supabase/session";
 import { isCategory, type Category } from "@/lib/categories";
+import { toMoods, type Mood } from "@/lib/moods";
 
 export type Menu = {
   id: string;
@@ -33,6 +34,7 @@ export type RestaurantDetail = {
   priceRange: number | null;
   phone: string | null;
   memo: string | null;
+  moodTags: Mood[];
   naverPlaceUrl: string | null;
   menus: Menu[];
   reviews: Review[];
@@ -90,7 +92,7 @@ export async function fetchDetail(
   const { data, error } = await supabase
     .from("restaurants")
     .select(
-      `id, name, category, address, road_address, price_range, phone, memo,
+      `id, name, category, address, road_address, price_range, phone, memo, mood_tags,
        naver_place_url, location,
        menus ( id, name, price, is_signature ),
        reviews ( id, user_id, rating, comment, visited_on, created_at,
@@ -142,6 +144,7 @@ export async function fetchDetail(
     priceRange: Number.isFinite(num(r.price_range)) ? num(r.price_range) : null,
     phone: str(r.phone),
     memo: str(r.memo),
+    moodTags: toMoods(r.mood_tags),
     naverPlaceUrl: str(r.naver_place_url),
     menus,
     reviews,

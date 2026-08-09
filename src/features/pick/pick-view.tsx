@@ -7,6 +7,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { CategoryChip } from "@/components/category-chip";
+import { favoredAt } from "@/lib/moods";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
 import type { Category } from "@/lib/categories";
@@ -230,6 +231,7 @@ export function PickView() {
           <Result
             restaurant={result}
             signatureMenu={signatureMenu}
+            meal={meal}
             onAccept={() => void accept()}
           />
         )}
@@ -343,10 +345,12 @@ function Shuffling({
 function Result({
   restaurant: r,
   signatureMenu,
+  meal,
   onAccept,
 }: {
   restaurant: NearbyRestaurant;
   signatureMenu: string | null;
+  meal: MealType;
   onAccept: () => void;
 }) {
   const price = r.priceRange === null ? null : PRICE_LABEL[r.priceRange];
@@ -385,6 +389,16 @@ function Result({
           )}
         </div>
         <Rating value={r.avgRating} count={r.reviewCount} />
+        {/* **왜 이게 나왔는지 한 줄.** 뽑기는 무작위지만 기울기가 있고, 그걸
+            안 보여주면 "왜 이걸 줬지" 로만 남는다. 이 시간대에 밀어준 태그만 적는다 —
+            안 밀어준 태그까지 적으면 그건 설명이 아니라 나열이다. */}
+        {r.moodTags.filter((m) => favoredAt(meal, m)).length > 0 && (
+          <p className="text-caption text-muted-foreground">
+            {`${meal === "dinner" ? "저녁" : "점심"}이라 `}
+            {r.moodTags.filter((m) => favoredAt(meal, m)).join("·")}
+            {" 쪽을 더 자주 뽑아요"}
+          </p>
+        )}
         {r.memo && (
           <p className="text-caption text-muted-foreground">{r.memo}</p>
         )}

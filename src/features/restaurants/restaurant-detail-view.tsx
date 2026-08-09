@@ -187,6 +187,21 @@ function Header({ data }: { data: RestaurantDetail }) {
         </p>
       )}
 
+      {/* 상황 태그. 점메추가 시간대별로 가중치를 주는 축이라, 여기서도 보여야
+          "왜 저녁에 이게 자주 나오지" 가 설명된다 (SPEC §3.2). */}
+      {data.moodTags.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5">
+          {data.moodTags.map((m) => (
+            <li
+              key={m}
+              className="rounded-chip border border-border px-2 py-0.5 text-caption text-muted-foreground"
+            >
+              {m}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {data.memo && (
         <p className="rounded-md border border-border bg-muted px-3 py-2 text-caption">
           {data.memo}

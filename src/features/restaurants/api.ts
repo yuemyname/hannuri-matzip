@@ -4,6 +4,7 @@ import { FETCH_LIMIT } from "@/features/map/config";
 import { getSupabase } from "@/lib/supabase/client";
 import { ensureSession } from "@/lib/supabase/session";
 import { isCategory, type Category } from "@/lib/categories";
+import { toMoods, type Mood } from "@/lib/moods";
 
 /** `restaurants_within` 이 돌려주는 한 줄 (SPEC §3.1) */
 export type NearbyRestaurant = {
@@ -18,6 +19,11 @@ export type NearbyRestaurant = {
   distanceM: number;
   avgRating: number;
   reviewCount: number;
+  /**
+   * 상황 태그. **점메추 결과에만 채워진다** — 지도 조회(`restaurants_in_bounds`)는
+   * 이 값을 안 준다. 지도 카드는 태그를 안 보여주므로 굳이 실어 나르지 않는다.
+   */
+  moodTags: Mood[];
 };
 
 export type NearbyParams = {
@@ -61,6 +67,7 @@ function toRestaurant(row: unknown): NearbyRestaurant | null {
     // 리뷰가 없으면 뷰가 0 을 준다. 0 은 "별점 없음" 이지 "0점" 이 아니다.
     avgRating: Number.isFinite(num(r.avg_rating)) ? num(r.avg_rating) : 0,
     reviewCount: Number.isFinite(num(r.review_count)) ? num(r.review_count) : 0,
+    moodTags: toMoods(r.mood_tags),
   };
 }
 

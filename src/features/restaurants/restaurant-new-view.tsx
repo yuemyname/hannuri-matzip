@@ -30,6 +30,7 @@ import {
   type NewMenu,
 } from "./create";
 import { PRICE_LABEL } from "./price";
+import { MOODS, type Mood } from "@/lib/moods";
 
 /**
  * 맛집 등록 (SPEC §4.4 / SHELL.md §4). 3단계다.
@@ -68,6 +69,8 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   const categoryList = useCategories();
   const [priceRange, setPriceRange] = useState<number | null>(null);
   const [memo, setMemo] = useState("");
+  // 상황 태그 (SPEC §3.2). 점메추가 시간대별로 가중치를 다르게 주는 축이다.
+  const [moods, setMoods] = useState<Mood[]>([]);
   const [menus, setMenus] = useState<NewMenu[]>([
     { name: "", price: null, isSignature: true },
   ]);
@@ -176,6 +179,7 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
         phone: picked?.telephone || null,
         memo: memo.trim() || null,
         naverPlaceUrl: picked?.link || null,
+        moodTags: moods,
         menus,
       });
     },
@@ -394,6 +398,42 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
             </p>
           </div>
         )}
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">
+          어떤 자리에 좋아요{" "}
+          <span className="font-normal text-muted-foreground">
+            (안 골라도 돼요)
+          </span>
+        </legend>
+        {/* 점메추가 이걸 본다 — 점심엔 혼밥·가벼움, 저녁엔 회식·가벼움·술 쪽을
+            더 자주 뽑는다. 안 고르면 어느 쪽으로도 안 기운다. */}
+        <div className="flex flex-wrap gap-2">
+          {MOODS.map((m) => {
+            const on = moods.includes(m);
+            return (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  setMoods((prev) =>
+                    prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+                  )
+                }
+                className={`inline-flex shrink-0 items-center gap-1 rounded-chip px-3 py-1.5 text-label transition-colors ${
+                  on
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border bg-background text-foreground hover:bg-muted"
+                }`}
+              >
+                {on && <span aria-hidden="true">✓</span>}
+                {m}
+              </button>
+            );
+          })}
+        </div>
       </fieldset>
 
       <fieldset className="flex flex-col gap-2">
