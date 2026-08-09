@@ -94,8 +94,10 @@ Supabase (Postgres + PostGIS) / TanStack Query v5 / zustand(지도 뷰 상태만
 - 인증은 익명 세션이다. 로그인 UI를 만들지 말 것. `signInAnonymously()`는
   앱 부트스트랩에서 한 번만, 단일 프로미스로 호출한다.
 - 추천 결과는 **서버가 결정한다.** 클라이언트 랜덤 금지. 애니메이션은 응답 수신 후 연출일 뿐.
-- `SUPABASE_SERVICE_ROLE_KEY`, `NAVER_SEARCH_CLIENT_SECRET`은 서버 라우트 전용.
-  `NEXT_PUBLIC_` 접두사 붙이지 말 것.
+- `SUPABASE_SERVICE_ROLE_KEY`, `NAVER_SEARCH_CLIENT_SECRET`, `ADMIN_PASSWORD`은
+  서버 라우트 전용. `NEXT_PUBLIC_` 접두사 붙이지 말 것.
+- 관리자 라우트(`/api/admin/*`)는 **첫 줄에서 `guard()`** 를 부른다. service_role
+  키는 RLS 를 통째로 무시하므로, 관문을 안 지나는 경로 하나가 곧 구멍이다.
 - **카테고리 목록의 단일 소스는 DB의 `categories` 표다.** 필터칩·등록 폼·점메추가
   전부 `useCategories()` 로 읽는다. 코드에 목록을 다시 적지 말 것.
   등록 폼에서 직접 입력하면 그 자리에서 한 줄이 늘어난다.
