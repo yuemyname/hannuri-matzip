@@ -25,6 +25,7 @@ import { usePinMode } from "./pin-store";
 import { usePlaceSearch, type PlaceCandidate } from "./use-place-search";
 import {
   createRestaurant,
+  findDuplicate,
   DuplicateRestaurantError,
   type NewMenu,
 } from "./create";
@@ -75,6 +76,10 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   const [pinned, setPinned] = useState<{ lat: number; lng: number } | null>(
     null,
   );
+
+  // 위치를 확정할 때 미리 보는 중복 검사 (create.ts findDuplicate).
+  // 저장 시점 검사는 그대로 둔다 — 동시에 등록하는 경우는 인덱스만이 막는다.
+  const [dupAtPin, setDupAtPin] = useState<string | null>(null);
 
   const debounced = useDebounced(query, 400);
 
@@ -134,6 +139,23 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
     : category;
   const coords =
     pinned ?? (picked ? { lat: picked.lat, lng: picked.lng } : geoCenter);
+
+  // 위치를 확정하는 순간 물어본다. 여기서 걸리면 폼을 채우기 전에 되돌아간다.
+  const checkDup = useMutation({
+    mutationFn: (at: { lat: number; lng: number }) => findDuplicate(name, at),
+    onSuccess: (hit, at) => {
+      setDupAtPin(hit);
+      if (hit) return;
+      setPinned(at);
+      setStep("detail");
+    },
+    onError: (_e, at) => {
+      // 못 물어봤다고 등록을 막지 않는다. 저장할 때 인덱스가 다시 본다.
+      setDupAtPin(null);
+      setPinned(at);
+      setStep("detail");
+    },
+  });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -282,14 +304,18 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
           )}
         </p>
 
+        {dupAtPin && (
+          <p role="alert" className="text-caption text-danger">
+            {`"${dupAtPin}" 이 이 자리에 이미 있어요. 이름을 다시 고르거나 위치를 옮겨 주세요`}
+          </p>
+        )}
+
         <div className="flex items-center gap-2">
           <Button
-            onClick={() => {
-              setPinned({ lat: shown.lat, lng: shown.lng });
-              setStep("detail");
-            }}
+            disabled={checkDup.isPending}
+            onClick={() => checkDup.mutate({ lat: shown.lat, lng: shown.lng })}
           >
-            이 위치로 할게요
+            {checkDup.isPending ? "확인 중" : "이 위치로 할게요"}
           </Button>
           <Button variant="ghost" onClick={() => setStep("search")}>
             이름 다시 고르기

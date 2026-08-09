@@ -27,6 +27,59 @@ export type NewRestaurant = {
 export class DuplicateRestaurantError extends Error {}
 
 /**
+ * 이미 같은 이름이 이 자리에 있는지 **저장 전에** 본다.
+ *
+ * 이걸 안 하면 이름·위치를 잡고 카테고리·가격·메모·메뉴까지 다 채운 다음에야
+ * "이미 있어요" 를 만난다. 앞에서 막으면 헛수고가 없다.
+ *
+ * **규칙은 DB 인덱스(`restaurants_name_loc_uniq`)를 그대로 옮겼다** —
+ * `lower(name)` + 위경도 소수 4자리(약 11m). 여기서 대충 "근처에 같은 이름" 으로
+ * 잡으면, DB 는 받아 줄 등록을 화면이 막는 일이 생긴다.
+ *
+ * 그래도 **저장할 때의 검사를 없애지 않는다.** 둘이 동시에 같은 곳을 등록하면
+ * 이 검사는 둘 다 통과시킨다. 진짜 보장은 인덱스 하나뿐이다.
+ */
+const CELL = 10_000; // 소수 4자리
+
+export async function findDuplicate(
+  name: string,
+  coords: { lat: number; lng: number },
+): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  await ensureSession();
+
+  // 인덱스는 반올림한 칸으로 묶는다. 칸 경계에 걸친 것도 후보로 받으려면
+  // 한 칸 여유를 두고 훑은 뒤, 같은 규칙으로 다시 걸러야 한다.
+  const pad = 1.5 / CELL;
+  const { data, error } = await supabase.rpc("restaurants_in_bounds", {
+    p_min_lat: coords.lat - pad,
+    p_min_lng: coords.lng - pad,
+    p_max_lat: coords.lat + pad,
+    p_max_lng: coords.lng + pad,
+    p_categories: null,
+    p_limit: 50,
+  });
+  // 못 물어봤으면 막지 않는다. 저장할 때 인덱스가 다시 본다.
+  if (error || !Array.isArray(data)) return null;
+
+  // 좌표는 전부 양수(한국)라 JS 반올림과 Postgres round 가 같은 답을 준다.
+  const cell = (n: number) => Math.round(n * CELL);
+  const target = { name: name.toLowerCase(), lat: cell(coords.lat), lng: cell(coords.lng) };
+
+  for (const row of data as unknown[]) {
+    if (typeof row !== "object" || row === null) continue;
+    const r = row as { name?: unknown; lat?: unknown; lng?: unknown };
+    if (typeof r.name !== "string") continue;
+    if (r.name.toLowerCase() !== target.name) continue;
+    if (cell(Number(r.lat)) !== target.lat) continue;
+    if (cell(Number(r.lng)) !== target.lng) continue;
+    return r.name;
+  }
+  return null;
+}
+
+/**
  * 맛집 등록 (SPEC §4.4-5).
  *
  * `created_by` 는 반드시 자기 자신이어야 한다 — RLS 의 insert 정책이 그렇게 걸려

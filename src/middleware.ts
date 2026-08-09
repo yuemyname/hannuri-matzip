@@ -22,7 +22,12 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 export function middleware(req: NextRequest) {
   if (req.headers.get("sec-fetch-dest") !== "document") return;
-  return NextResponse.redirect(new URL("/", req.url));
+  const res = NextResponse.redirect(new URL("/", req.url));
+  // **캐시하지 못하게 한다.** 이 규칙은 코드가 바뀌면 같이 바뀐다 — 브라우저가
+  // 예전 리다이렉트를 들고 있으면 새 화면(`/admin` 처럼 나중에 예외로 뺀 경로)이
+  // 배포된 뒤에도 계속 메인으로 튕긴다. 그러면 원인이 서버에 없어서 못 찾는다.
+  res.headers.set("Cache-Control", "no-store");
+  return res;
 }
 
 export const config = {
