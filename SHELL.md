@@ -5,7 +5,7 @@
 
 ## 0. 결정
 
-메인 화면(지도 + 하단 컨트롤 바)은 앱이 살아있는 동안 **언마운트되지 않는다.**
+메인 화면(지도 + 그 위에 떠 있는 컨트롤)은 앱이 살아있는 동안 **언마운트되지 않는다.**
 나머지 화면은 그 위에 모달로 뜬다.
 
 이유:
@@ -21,7 +21,7 @@
 ```
 src/app/
   layout.tsx                      # 헤더 + @modal 슬롯 렌더
-  page.tsx                        # 메인 — 지도 + 하단 컨트롤 바
+  page.tsx                        # 메인 — 지도 한 장 + 플로팅 컨트롤
   @modal/
     default.tsx                   # export default function () { return null }
     (.)pick/page.tsx              # 점메추

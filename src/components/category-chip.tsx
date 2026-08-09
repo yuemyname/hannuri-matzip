@@ -1,6 +1,7 @@
 "use client";
 
 import type { Category } from "@/lib/categories";
+import { cn } from "./ui/cn";
 
 // 카테고리별 색. Tailwind 는 클래스 문자열을 정적으로 읽으므로 조립하지 말고 전부 적는다.
 // Record<Category, …> 라서 카테고리를 추가하면 여기서 타입 에러가 난다 —
@@ -19,10 +20,13 @@ export function CategoryChip({
   category,
   selected = false,
   onToggle,
+  /** 지도 위에 띄울 때 그림자를 얹는 용도. 모달 안에서는 안 쓴다 */
+  className,
 }: {
   category: Category;
   selected?: boolean;
   onToggle?: (category: Category) => void;
+  className?: string;
 }) {
   return (
     // button 이라 Tab 도달과 Enter/Space 토글이 그냥 된다 (CLAUDE.md 접근성).
@@ -31,11 +35,13 @@ export function CategoryChip({
       type="button"
       aria-pressed={selected}
       onClick={() => onToggle?.(category)}
-      className={`inline-flex shrink-0 items-center gap-1 rounded-chip px-3 py-1.5 text-label transition-colors ${
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-chip px-3 py-1.5 text-label transition-colors",
         selected
           ? SELECTED[category]
-          : "border border-border bg-background text-foreground hover:bg-muted"
-      }`}
+          : "border border-border bg-background text-foreground hover:bg-muted",
+        className,
+      )}
     >
       {/* 선택 상태를 색으로만 알리지 않는다. 흑백으로 봐도 구분된다 */}
       {selected && <span aria-hidden="true">✓</span>}

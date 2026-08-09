@@ -22,6 +22,8 @@ import {
   type MealType,
 } from "./api";
 
+// globals.css 의 `--animate-pick-fill` 도 1.2s 다. 한쪽만 고치면 바가 다 차고도
+// 결과가 안 뜨거나, 덜 찬 채로 결과가 뜬다.
 const SHUFFLE_MS = 1200;
 const TICK_MS = 90;
 /** SPEC §3.2 의 p_exclude_days 기본값 */
@@ -206,7 +208,10 @@ export function PickView() {
       </div>
 
       <div aria-live="polite" className="min-h-0">
-        {(pick.isPending || shuffling) && <Shuffling />}
+        {/* 응답이 도착한 뒤(=shuffling)에만 남은 시간을 안다 */}
+        {(pick.isPending || shuffling) && (
+          <Shuffling determinate={!pick.isPending && shuffling} />
+        )}
 
         {showResult && result && (
           <Result
@@ -270,7 +275,21 @@ function useShuffle(startedAt: number | null) {
   return running;
 }
 
-function Shuffling() {
+/**
+ * 고르는 중 연출 + 진행 바.
+ *
+ * 바는 두 가지 상태를 구분해서 그린다. 이게 핵심이다:
+ * - `determinate` — 응답을 이미 받았고 셔플만 도는 중이다. 남은 시간이
+ *   정확히 `SHUFFLE_MS` 라서 그 시간에 맞춰 채운다.
+ * - 아니면 — 아직 응답을 기다린다. 얼마나 걸릴지 모르므로 퍼센트를 지어내지 않고
+ *   왕복만 시킨다. 여기서 1.2초짜리 채움을 쓰면 느린 네트워크에서 바가 다 차고도
+ *   결과가 안 나오는, 대놓고 거짓말하는 화면이 된다.
+ *
+ * 바는 `aria-hidden` 이다. 진행률 자체는 1.2초짜리라 읽어 줄 값이 아니고,
+ * 상태는 옆의 "고르는 중" 글자와 바깥의 `aria-live` 가 이미 알린다.
+ * 색만으로 알리지 않는다는 규칙(CLAUDE.md)도 그 글자가 지킨다.
+ */
+function Shuffling({ determinate }: { determinate: boolean }) {
   const [i, setI] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setI((v) => v + 1), TICK_MS);
@@ -279,10 +298,24 @@ function Shuffling() {
   const label = CATEGORIES[i % CATEGORIES.length];
 
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-border p-6">
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-border p-6">
       <span aria-hidden="true" className="text-display">
         {label}
       </span>
+
+      <span
+        aria-hidden="true"
+        className="h-1 w-full overflow-hidden rounded-chip bg-muted"
+      >
+        <span
+          className={
+            determinate
+              ? "block h-full w-full origin-left rounded-chip bg-primary animate-pick-fill"
+              : "block h-full w-1/4 rounded-chip bg-primary animate-pick-slide"
+          }
+        />
+      </span>
+
       <span className="text-caption text-muted-foreground">고르는 중</span>
     </div>
   );

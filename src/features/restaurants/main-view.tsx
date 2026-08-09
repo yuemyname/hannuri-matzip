@@ -8,14 +8,14 @@ import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
 import type { Category } from "@/lib/categories";
 import { useNearby } from "./use-nearby";
-import { FilterBar } from "./filter-bar";
+import { MapControls } from "./map-controls";
 import { RestaurantCard } from "./restaurant-card";
 import type { SelectSource } from "./select-source";
 
 /**
- * 메인 셸 — 지도 + 하단 컨트롤 바 (SPEC §4.1).
+ * 메인 셸 — 지도 한 장 + 그 위에 뜨는 플로팅 컨트롤 (SPEC §4.1).
  *
- * **리스트는 없다.** 화면은 지도가 전부고, 아래에 반경·카테고리 토글만 둔다.
+ * **리스트는 없다.** 화면은 지도가 전부고, 반경·카테고리 토글은 그 위에 떠 있다.
  * 토글을 바꾸면 조회 조건이 바뀌고, 마커는 그 결과 배열을 그대로 그린다 —
  * 그래서 "고른 종류만 마커로 보인다"가 별도 필터 없이 성립한다.
  *
@@ -93,9 +93,9 @@ export function MainView() {
   const selected = restaurants.find((r) => r.id === selectedId) ?? null;
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col">
-      {/* 지도가 남은 높이를 전부 가져간다. 데스크톱도 같다 — 좌측 리스트 단을 없앴다 */}
-      <div className="relative min-h-0 flex-1">
+    // 지도가 화면을 통째로 쓴다. 컨트롤·카드는 그 위에 떠 있다.
+    <main className="relative min-h-0 flex-1">
+      <div className="absolute inset-0">
         <MapPanel
           position={position}
           restaurants={restaurants}
@@ -103,39 +103,42 @@ export function MainView() {
           selectionSource={source}
           onSelect={handleSelect}
         />
+      </div>
 
-        {/* 고른 한 곳만 지도 위에 띄운다. 컨트롤 바 바로 위에 겹치되,
-            바깥은 클릭을 통과시켜 지도를 계속 만질 수 있게 둔다. */}
-        {selected && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3">
-            <div className="pointer-events-auto mx-auto flex max-w-[560px] flex-col gap-1">
+      {/* 지도 위에 뜨는 것들. 아래에서부터 컨트롤 → 고른 곳 카드 순으로 쌓인다.
+          **감싸는 층은 포인터 이벤트를 받지 않는다** — 받으면 지도 아래쪽
+          절반을 손가락으로 끌 수 없게 된다. 실제 버튼만 켠다. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-2 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="mx-auto flex w-full max-w-[560px] flex-col gap-2">
+          {selected && (
+            <div className="pointer-events-auto flex flex-col gap-1">
               <button
                 type="button"
                 onClick={() => setSelectedId(null)}
-                className="self-end rounded-chip bg-background/90 px-2 py-0.5 text-caption text-muted-foreground shadow-pop hover:bg-muted"
+                className="self-end rounded-chip border border-border bg-background px-2 py-0.5 text-caption text-muted-foreground shadow-pop hover:bg-muted"
               >
                 닫기
               </button>
               <RestaurantCard restaurant={selected} selected />
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      <FilterBar
-        radius={radius}
-        radiusReady={hydrated}
-        onRadiusChange={setRadius}
-        categories={categories}
-        onToggleCategory={toggleCategory}
-        onClearCategories={clearCategories}
-        count={restaurants.length}
-        // placeholderData 로 이전 결과를 들고 있는 동안은 로딩이 아니다.
-        // 여기서 isFetching 을 보면 토글을 바꿀 때마다 문구가 번쩍인다.
-        isLoading={query.isPending}
-        isError={query.isError}
-        onRetry={() => void query.refetch()}
-      />
+          <MapControls
+            radius={radius}
+            radiusReady={hydrated}
+            onRadiusChange={setRadius}
+            categories={categories}
+            onToggleCategory={toggleCategory}
+            onClearCategories={clearCategories}
+            count={restaurants.length}
+            // placeholderData 로 이전 결과를 들고 있는 동안은 로딩이 아니다.
+            // 여기서 isFetching 을 보면 토글을 바꿀 때마다 문구가 번쩍인다.
+            isLoading={query.isPending}
+            isError={query.isError}
+            onRetry={() => void query.refetch()}
+          />
+        </div>
+      </div>
     </main>
   );
 }

@@ -100,14 +100,24 @@
 
   /* ---- Motion ---- */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
-  --animate-shuffle: shuffle 1.2s var(--ease-out-soft); /* /pick 추첨 연출 */
+  /* /pick 추첨 바. **1.2s 는 pick-view 의 SHUFFLE_MS 와 같은 값이다** —
+     한쪽만 고치면 바가 다 차고도 결과가 안 뜨거나, 덜 찬 채로 결과가 뜬다. */
+  --animate-pick-fill: pick-fill 1.2s linear forwards;
+  --animate-pick-slide: pick-slide 1.1s ease-in-out infinite;
   --animate-marker-pop: marker-pop 0.36s var(--ease-out-soft); /* 2.5 마커 강조 */
 }
 
-@keyframes shuffle {
-  0%   { transform: translateY(0) scale(1);      opacity: 1; }
-  40%  { transform: translateY(-8px) scale(0.97); opacity: 0.6; }
-  100% { transform: translateY(0) scale(1);      opacity: 1; }
+/* 셔플은 길이가 정해져 있다. 그래서 진짜로 그 시간에 맞춰 찬다 —
+   `linear` 인 이유도 그것이다. 시간에 비례하지 않으면 남은 시간을 속이는 셈이다. */
+@keyframes pick-fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* 응답을 기다리는 동안은 얼마나 걸릴지 모른다. 퍼센트를 지어내지 않고 왕복만 시킨다. */
+@keyframes pick-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
 }
 
 /* 리스트에서 짚은 맛집이 지도 어디인지 눈으로 찾게 해주는 한 번짜리 튕김.
