@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MapPanel } from "@/features/map/map-panel";
 import { hasSeenWelcome } from "@/features/onboarding/seen";
@@ -46,6 +47,10 @@ function useFirstRunWelcome() {
   }, [router]);
 }
 
+/** 보조 액션 알약. 주 액션(점메추)만 브랜드색이고 나머지는 흰 알약이다 */
+const ACTION =
+  "inline-flex shrink-0 items-center rounded-chip border border-border bg-background px-3 py-1.5 text-label shadow-pop hover:bg-muted";
+
 export function MainView() {
   useFirstRunWelcome();
   const position = useCurrentPosition();
@@ -76,11 +81,27 @@ export function MainView() {
 
   const [categories, setCategories] = useState<Category[]>([]);
 
-  // 카테고리는 서버가 거른다 — 반경 밖까지 훑을 이유가 없고 RPC 가 이미 받는다.
-  const query = useNearby(hydrated ? position.center : null, radius, {
-    categories,
-  });
-  const restaurants = useMemo(() => query.data ?? [], [query.data]);
+  // **카테고리를 서버에 넘기지 않는다.** 넘기면 서버가 걸러서 오므로, 안 고른
+  // 종류가 반경 안에 몇 곳인지 알 수 없다 — 칩에 개수를 못 붙이고 "없는 종류"도
+  // 못 가린다. 반경 안 결과는 많아야 수십 건이라 거르기는 여기서 해도 된다.
+  // (정렬을 클라이언트에서 하기로 한 것과 같은 이유다.)
+  const query = useNearby(hydrated ? position.center : null, radius);
+  const all = useMemo(() => query.data ?? [], [query.data]);
+
+  // 종류별 개수. 거르기 전 목록에서 세야 "한식 3 / 일식 2" 가 나온다.
+  const categoryCounts = useMemo(() => {
+    const m = new Map<Category, number>();
+    for (const r of all) m.set(r.category, (m.get(r.category) ?? 0) + 1);
+    return m;
+  }, [all]);
+
+  const restaurants = useMemo(
+    () =>
+      categories.length === 0
+        ? all
+        : all.filter((r) => categories.includes(r.category)),
+    [all, categories],
+  );
 
   const toggleCategory = useCallback((c: Category) => {
     setCategories((prev) =>
@@ -110,11 +131,41 @@ export function MainView() {
         />
       </div>
 
-      {/* 지도 위에 뜨는 것들. 아래에서부터 컨트롤 → 고른 곳 카드 순으로 쌓인다.
+      {/* 지도 위에 뜨는 것들. 아래에서부터 컨트롤 → 고른 곳 카드 → 액션 순으로 쌓인다.
           **감싸는 층은 포인터 이벤트를 받지 않는다** — 받으면 지도 아래쪽
-          절반을 손가락으로 끌 수 없게 된다. 실제 버튼만 켠다. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-2 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          절반을 손가락으로 끌 수 없게 된다. 실제 버튼만 켠다.
+
+          **전부 한 흐름(flex column)에 넣는다.** 액션만 따로 absolute 로 띄웠더니
+          마커를 골랐을 때 뜨는 카드와 겹쳐서, 카드 오른쪽이 눌리지 않았다.
+          떠 있는 것끼리는 좌표로 피하는 게 아니라 같은 줄에 세워서 피한다. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[var(--z-filterbar)] flex flex-col gap-2 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto flex w-full max-w-[560px] flex-col gap-2">
+          {/* 오른쪽 = 무엇을 할지. 가운데(필터)와 섞지 않는다 — 엄지가 닿는
+              자리에 액션을 둔다 (SPEC §4.1). 세로로 쌓으면 화면을 130px 넘게
+              먹어서 640px 기기에서 지도가 얼마 안 남는다. 한 줄로 눕힌다.
+              아이콘 대신 글자를 쓴다. 앱 전체가 글자 기반이라 여기만 아이콘을
+              들이면 "이게 뭐지" 하는 버튼이 생긴다. */}
+          <nav
+            aria-label="바로가기"
+            className="flex items-center justify-end gap-2"
+          >
+            <Link href="/me" className={`${ACTION} pointer-events-auto`}>
+              내 정보
+            </Link>
+            <Link
+              href="/restaurants/new"
+              className={`${ACTION} pointer-events-auto`}
+            >
+              + 등록
+            </Link>
+            <Link
+              href="/pick"
+              className="pointer-events-auto inline-flex shrink-0 items-center rounded-chip bg-primary px-5 py-2.5 text-subtitle font-medium text-primary-foreground shadow-pop hover:bg-brand-700"
+            >
+              점메추
+            </Link>
+          </nav>
+
           {selected && (
             <div className="pointer-events-auto flex flex-col gap-1">
               <button
@@ -135,6 +186,7 @@ export function MainView() {
             categories={categories}
             onToggleCategory={toggleCategory}
             onClearCategories={clearCategories}
+            categoryCounts={categoryCounts}
             count={restaurants.length}
             // placeholderData 로 이전 결과를 들고 있는 동안은 로딩이 아니다.
             // 여기서 isFetching 을 보면 토글을 바꿀 때마다 문구가 번쩍인다.

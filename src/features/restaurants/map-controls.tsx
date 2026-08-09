@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { CategoryChip } from "@/components/category-chip";
 import { CATEGORIES, type Category } from "@/lib/categories";
@@ -28,6 +29,7 @@ export function MapControls({
   categories,
   onToggleCategory,
   onClearCategories,
+  categoryCounts,
   count,
   isLoading,
   isError,
@@ -41,11 +43,32 @@ export function MapControls({
   categories: readonly Category[];
   onToggleCategory: (c: Category) => void;
   onClearCategories: () => void;
+  /** 지금 반경 안에 실제로 있는 카테고리와 그 개수. 없는 종류는 칩을 안 그린다 */
+  categoryCounts: ReadonlyMap<Category, number>;
   count: number;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
 }) {
+  // 칩 일곱 개를 늘 펼쳐 두면 지도 아래가 한 줄 통째로 막힌다.
+  // 평소엔 [전체] [상세] 둘만 두고, 필요할 때만 편다.
+  const [open, setOpen] = useState(false);
+
+  // **지금 반경 안에 있는 종류만** 보여준다. 없는 걸 눌러 봐야 0건이다.
+  // 고른 종류는 개수가 0이 돼도 남긴다 — 안 그러면 반경을 좁혔을 때
+  // 칩이 사라져서 필터를 풀 방법이 없어진다.
+  const shown = CATEGORIES.filter(
+    (c) => (categoryCounts.get(c) ?? 0) > 0 || categories.includes(c),
+  );
+
+  // 접혀 있어도 무엇이 걸렸는지는 보여야 한다. 안 그러면 결과가 왜 적은지 모른다.
+  const summary =
+    categories.length === 0
+      ? "상세"
+      : categories.length === 1
+        ? categories[0]
+        : `${categories[0]} 외 ${categories.length - 1}`;
+
   return (
     <div className="flex flex-col gap-2">
       <Status
@@ -91,27 +114,55 @@ export function MapControls({
             type="button"
             aria-pressed={categories.length === 0}
             onClick={onClearCategories}
-            className={`inline-flex shrink-0 items-center rounded-chip px-3 py-1.5 text-label shadow-pop ${
-              categories.length === 0
-                ? "bg-primary text-primary-foreground"
-                : "border border-border bg-background text-foreground hover:bg-muted"
-            }`}
+            className={chip(categories.length === 0)}
           >
             전체
           </button>
-          {CATEGORIES.map((c) => (
-            <CategoryChip
-              key={c}
-              category={c}
-              selected={categories.includes(c)}
-              onToggle={onToggleCategory}
-              className="shadow-pop"
-            />
-          ))}
+
+          {open ? (
+            <>
+              {shown.map((c) => (
+                <CategoryChip
+                  key={c}
+                  category={c}
+                  selected={categories.includes(c)}
+                  onToggle={onToggleCategory}
+                  count={categoryCounts.get(c) ?? 0}
+                  className="shadow-pop"
+                />
+              ))}
+              <button
+                type="button"
+                aria-expanded={true}
+                onClick={() => setOpen(false)}
+                className={chip(false)}
+              >
+                접기
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              aria-expanded={false}
+              onClick={() => setOpen(true)}
+              className={chip(categories.length > 0)}
+            >
+              {summary}
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+/** 칩 공통 옷. CategoryChip 은 카테고리 색을 쓰지만 이쪽은 중립이다 */
+function chip(active: boolean) {
+  return `inline-flex shrink-0 items-center gap-1 rounded-chip px-3 py-1.5 text-label shadow-pop ${
+    active
+      ? "bg-primary text-primary-foreground"
+      : "border border-border bg-background text-foreground hover:bg-muted"
+  }`;
 }
 
 /** 리스트가 맡던 로딩·에러·빈 결과 안내. 지도 위에 뜨므로 알약 하나로 줄인다 */

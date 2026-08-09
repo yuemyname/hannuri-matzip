@@ -30,33 +30,13 @@ export default function RootLayout({
           min-h-dvh 로 잡고 있어서 길어지면 그대로 문서가 스크롤된다. */}
       <body className="flex h-dvh flex-col">
         <Providers>
-          {/* 헤더는 셸의 일부다. 모달이 떠도 언마운트되지 않는다 (SHELL.md §0) */}
-          <header className="z-[var(--z-header)] flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
+          {/* 헤더에는 이름만 남긴다. 등록·점메추·내 정보는 지도 위로 내려갔다
+              (SPEC §4.1) — 엄지가 닿는 곳에 있어야 하고, 어차피 메인에서만 쓴다.
+              모달이 떠도 언마운트되지 않는다 (SHELL.md §0). */}
+          <header className="z-[var(--z-header)] flex h-12 shrink-0 items-center border-b border-border bg-background px-4">
             <Link href="/" className="text-subtitle text-brand-700">
               한누리 맛집
             </Link>
-            <nav className="flex items-center gap-1">
-              {/* 리스트를 없애면서 빈 상태에 있던 [맛집 등록하기] 도 같이 사라졌다.
-                  등록은 조건과 무관하게 늘 열려 있어야 하는 길이라 헤더로 올린다. */}
-              <Link
-                href="/restaurants/new"
-                className="rounded-chip px-3 py-1.5 text-label hover:bg-muted"
-              >
-                등록
-              </Link>
-              <Link
-                href="/pick"
-                className="rounded-chip px-3 py-1.5 text-label hover:bg-muted"
-              >
-                점메추
-              </Link>
-              <Link
-                href="/me"
-                className="rounded-chip px-3 py-1.5 text-label hover:bg-muted"
-              >
-                내 정보
-              </Link>
-            </nav>
           </header>
 
           {children}
