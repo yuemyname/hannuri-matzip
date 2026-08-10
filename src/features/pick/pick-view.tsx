@@ -16,7 +16,7 @@ import { useCategories } from "@/features/categories/api";
 import { RADIUS_OPTIONS } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView } from "@/features/map/map-store";
-import { PRICE_LABEL } from "@/features/restaurants/price";
+import { PRICE_LABEL, priceReasonAt } from "@/features/restaurants/price";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import {
   answerPick,
@@ -359,6 +359,13 @@ function Result({
   meal: MealType;
   onAccept: () => void;
 }) {
+  // 태그를 안 달아도 점심·저녁은 갈린다 — 가격대가 기본 축이다 (pick_restaurant
+  // 의 price_fit). 태그가 있으면 그게 앞에 온다. 사람이 적어 둔 게 먼저다.
+  const reasons = [
+    ...r.moodTags.filter((m) => favoredAt(meal, m)),
+    priceReasonAt(meal, r.priceRange),
+  ].filter((x): x is string => x !== null);
+
   // href 로 쓰기 전에 한 번 더 본다. DB 제약이 막고 있지만 그 앞에 들어간 값이
   // 있을 수 있고, `javascript:` 가 통과하면 클릭 한 번에 스크립트가 돈다.
   const bookingUrl =
@@ -402,12 +409,12 @@ function Result({
         </div>
         <Rating value={r.avgRating} count={r.reviewCount} />
         {/* **왜 이게 나왔는지 한 줄.** 뽑기는 무작위지만 기울기가 있고, 그걸
-            안 보여주면 "왜 이걸 줬지" 로만 남는다. 이 시간대에 밀어준 태그만 적는다 —
-            안 밀어준 태그까지 적으면 그건 설명이 아니라 나열이다. */}
-        {r.moodTags.filter((m) => favoredAt(meal, m)).length > 0 && (
+            안 보여주면 "왜 이걸 줬지" 로만 남는다. 이 시간대에 **이 집에** 밀어준
+            것만 적는다 — 안 밀어준 것까지 적으면 그건 설명이 아니라 나열이다. */}
+        {reasons.length > 0 && (
           <p className="text-caption text-muted-foreground">
             {`${meal === "dinner" ? "저녁" : "점심"}이라 `}
-            {r.moodTags.filter((m) => favoredAt(meal, m)).join("·")}
+            {reasons.join("·")}
             {" 쪽을 더 자주 뽑아요"}
           </p>
         )}

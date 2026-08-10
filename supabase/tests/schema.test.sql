@@ -837,11 +837,136 @@ begin
     elsif hit = '거리_멂' then n_far := n_far + 1; end if;
   end loop;
 
-  -- 최대 1.3배까지만 준다. 기대 약 1.3:1 이라 300회면 안전하다.
+  -- 점심은 1.45 배까지 준다. 기대 약 1.42:1 이라 300회면 안전하다.
   if n_near <= n_far then
     raise exception '가까운 쪽이 유리하지 않다 (가까움 %회 <= 멂 %회)', n_near, n_far;
   end if;
   raise notice '거리 가중치 — 가까움 %, 멂 %', n_near, n_far;
+end
+$$;
+
+-- ── 8c. 태그가 없어도 점심·저녁이 갈린다 (2026-08-09) ─────────────────
+-- 8b 는 시간대를 `mood_tags` 하나에만 걸었다. 그래서 아무도 태그를 안 달면 점심과
+-- 저녁이 똑같았다 — 지금 등록된 곳들이 정확히 그 상태다. 가격대를 기본 축으로 뒀고,
+-- **그게 태그 없이도 뒤집히는지**를 본다. 두 곳을 같은 자리·리뷰 없음·태그 없음으로
+-- 두고 가격대만 다르게 한다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+begin
+  insert into restaurants(id, name, category, location, created_by, price_range)
+  values
+    ('eeee0001-0000-0000-0000-000000000001', '가격_싼집', '한식',
+     st_makepoint(128.8, 35.8)::geography, uid, 1),
+    ('eeee0002-0000-0000-0000-000000000002', '가격_비싼집', '한식',
+     st_makepoint(128.8, 35.8)::geography, uid, 4);
+end
+$$;
+
+--
+-- **"더 많이 나왔다" 로는 검사가 안 된다.** 후보가 둘뿐이라 가중치를 통째로 없애도
+-- 5할씩 나오고, 그러면 방향 비교는 동전 던지기가 되어 절반은 그냥 통과한다
+-- (실제로 price_fit 을 1.0 으로 만들어 보고 통과하는 걸 확인했다). 그래서
+-- **몫에 하한을 둔다** — 기대 61%, 통과선 55%. 망가지면 50% 로 내려앉아 걸린다.
+do $$
+declare
+  RUNS constant int := 1000;
+  FLOOR_HITS constant int := RUNS * 55 / 100;
+  i int; hit text;
+  d_cheap int := 0; d_pricey int := 0;
+  l_cheap int := 0; l_pricey int := 0;
+  tags text[];
+begin
+  -- 전제 확인. 태그가 하나라도 붙어 있으면 이 아래 결과는 가격 이야기가 아니다.
+  select r.mood_tags into tags from restaurants r
+   where r.id = 'eeee0001-0000-0000-0000-000000000001';
+  if coalesce(array_length(tags, 1), 0) <> 0 then
+    raise exception '가격 검증인데 태그가 붙어 있다: %', tags;
+  end if;
+
+  for i in 1..RUNS loop
+    select p.name into hit from pick_restaurant(35.8, 128.8, 200, 'dinner') p;
+    if hit = '가격_싼집' then d_cheap := d_cheap + 1;
+    elsif hit = '가격_비싼집' then d_pricey := d_pricey + 1; end if;
+
+    select p.name into hit from pick_restaurant(35.8, 128.8, 200, 'lunch') p;
+    if hit = '가격_싼집' then l_cheap := l_cheap + 1;
+    elsif hit = '가격_비싼집' then l_pricey := l_pricey + 1; end if;
+  end loop;
+
+  -- 1.225 대 0.775 → 기대 61.2%. 1000회에서 55% 아래로 떨어지려면 4σ 어긋나야 한다.
+  if d_pricey < FLOOR_HITS then
+    raise exception '저녁에 비싼 쪽이 충분히 안 나온다 (비쌈 %회 < %회, 쌈 %회)',
+      d_pricey, FLOOR_HITS, d_cheap;
+  end if;
+  if l_cheap < FLOOR_HITS then
+    raise exception '점심에 싼 쪽이 충분히 안 나온다 (쌈 %회 < %회, 비쌈 %회)',
+      l_cheap, FLOOR_HITS, l_pricey;
+  end if;
+  raise notice '태그 없는 가격 축 — 저녁 비쌈 %/쌈 %, 점심 쌈 %/비쌈 % (통과선 %)',
+    d_pricey, d_cheap, l_cheap, l_pricey, FLOOR_HITS;
+end
+$$;
+
+-- 가격대는 선택 입력이라 비어 있는 곳이 흔하다. **null 이면 어느 쪽으로도 안 기울어야
+-- 한다** — 여기서 0 이 되거나 에러가 나면, 가격을 안 적은 집이 통째로 안 뽑힌다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+  RUNS constant int := 60; i int; hit text; n int := 0;
+begin
+  insert into restaurants(id, name, category, location, created_by)
+  values ('eeee0003-0000-0000-0000-000000000003', '가격_없음', '한식',
+          st_makepoint(128.9, 35.9)::geography, uid);
+  for i in 1..RUNS loop
+    select p.name into hit from pick_restaurant(35.9, 128.9, 200, 'dinner') p;
+    if hit = '가격_없음' then n := n + 1; end if;
+  end loop;
+  if n <> RUNS then
+    raise exception '가격대 없는 곳이 안 뽑힌다 (%회/%회)', n, RUNS;
+  end if;
+end
+$$;
+
+-- 거리의 무게도 시간대마다 다르다. 점심은 한 시간 안에 다녀와야 해서 100m 가 진짜
+-- 차이고, 저녁은 시간이 있으니 거의 안 본다 (점심 0.45 / 저녁 0.1).
+--
+-- **이건 앞의 검사들보다 표본이 커야 한다.** 두 비율의 차이(약 59% 대 52%)를 보는
+-- 것이라, 한쪽만 보는 검사보다 흔들림이 크다. 300회로는 우연히 뒤집힌다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+  RUNS constant int := 2000;
+  LUNCH_FLOOR constant int := RUNS * 55 / 100;
+  DINNER_CEIL constant int := RUNS * 56 / 100;
+  i int; hit text; l_near int := 0; d_near int := 0;
+begin
+  insert into restaurants(id, name, category, location, created_by)
+  values
+    ('eeee0004-0000-0000-0000-000000000004', '시간대거리_가까움', '한식',
+     st_makepoint(129.0, 36.0)::geography, uid),
+    ('eeee0005-0000-0000-0000-000000000005', '시간대거리_멂', '한식',
+     st_makepoint(129.0021, 36.0)::geography, uid);   -- 약 190m
+
+  for i in 1..RUNS loop
+    select p.name into hit from pick_restaurant(36.0, 129.0, 200, 'lunch') p;
+    if hit = '시간대거리_가까움' then l_near := l_near + 1; end if;
+    select p.name into hit from pick_restaurant(36.0, 129.0, 200, 'dinner') p;
+    if hit = '시간대거리_가까움' then d_near := d_near + 1; end if;
+  end loop;
+
+  -- 가격 검사와 같은 이유로 **두 값을 서로 비교하지 않는다.** 무게를 같게 만들면
+  -- 둘이 붙어서 대소 비교가 동전 던지기가 된다. 각자 선을 넘는지로 본다:
+  -- 점심 기대 59.2% (55% 위여야), 저녁 기대 52.4% (56% 아래여야).
+  -- 상한을 57% 로 뒀다가 낮췄다 — 무게를 같게 만든 코드가 1150 으로 아슬아슬하게만
+  -- 걸렸다. 56% 면 망가진 쪽이 통과할 확률이 0.2% 로 떨어진다.
+  if l_near < LUNCH_FLOOR then
+    raise exception '점심에 가까운 쪽을 충분히 안 챙긴다 (%회 < %회 / %회)',
+      l_near, LUNCH_FLOOR, RUNS;
+  end if;
+  if d_near > DINNER_CEIL then
+    raise exception '저녁에 거리를 점심만큼 본다 (%회 > %회 / %회)',
+      d_near, DINNER_CEIL, RUNS;
+  end if;
+  raise notice '시간대별 거리 무게 — 점심 가까움 %/% (하한 %), 저녁 가까움 %/% (상한 %)',
+    l_near, RUNS, LUNCH_FLOOR, d_near, RUNS, DINNER_CEIL;
 end
 $$;
 
