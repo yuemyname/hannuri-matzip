@@ -62,7 +62,7 @@ src/app/
     (.)bill/page.tsx              # 밥값 내기
     (.)welcome/page.tsx           # 첫 사용자 안내 3스텝
     (.)feedback/page.tsx          # 피드백
-    (.)discover/page.tsx          # 주변 찾기
+    (.)discover/page.tsx          # 검색 (네이버에서 근처 가게 찾기)
   pick/page.tsx                   # ↓ 아래는 전부 풀페이지 fallback
   restaurants/new/page.tsx        #   직접 진입 / 새로고침 / 슬랙 링크 클릭 시
   restaurants/[id]/page.tsx

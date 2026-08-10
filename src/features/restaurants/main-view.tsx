@@ -61,7 +61,7 @@ const ACTION_PRIMARY =
 const MENU = [
   { href: "/pick", label: "점메추", primary: true },
   { href: "/bill", label: "밥값 내기", primary: false },
-  { href: "/discover", label: "주변 찾기", primary: false },
+  { href: "/discover", label: "검색", primary: false },
   { href: "/restaurants/new", label: "식당 등록", primary: false },
   { href: "/me", label: "MY", primary: false },
   { href: "/feedback", label: "피드백", primary: false },

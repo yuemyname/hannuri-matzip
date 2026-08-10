@@ -3,7 +3,7 @@ import { DiscoverView } from "@/features/discover/discover-view";
 
 export default function Page() {
   return (
-    <Modal title="주변 찾기">
+    <Modal title="검색">
       <DiscoverView />
     </Modal>
   );

@@ -272,6 +272,14 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
         )}
 
         {places.length > 0 && (
+          // 초록이 무슨 뜻인지 글자로도 적는다 (CLAUDE.md). 줄마다 붙이면
+          // 목록이 지저분해져서 머리에 한 번만 둔다.
+          <p className="text-caption font-medium text-naver-strong">
+            네이버 검색 결과
+          </p>
+        )}
+
+        {places.length > 0 && (
           <ul className="flex flex-col gap-2">
             {places.map((p) => (
               <li key={`${p.name}-${p.lat}-${p.lng}`}>
@@ -292,10 +300,13 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
                       if (guess) setCategory(guess);
                     }
                   }}
+                  // **네이버에서 온 결과는 초록 테두리** (2026-08-10).
+                  // 고른 줄만 브랜드색으로 바뀐다 — 초록은 "어디서 왔나",
+                  // 주황은 "내가 뭘 골랐나" 라 서로 다른 것을 말한다.
                   className={`flex w-full flex-col gap-0.5 rounded-lg border p-3 text-left ${
                     picked?.name === p.name && picked.lat === p.lat
                       ? "border-brand-600 bg-accent"
-                      : "border-border hover:bg-accent"
+                      : "border-naver bg-naver-soft hover:bg-accent"
                   }`}
                 >
                   <span className="flex items-baseline justify-between gap-2">

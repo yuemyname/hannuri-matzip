@@ -183,11 +183,15 @@ function CandidateRow({
   });
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+    // **네이버에서 온 줄은 초록 테두리.** 아직 우리 것이 아니라는 표시다 —
+    // 담고 나면 지도에 평범한 마커로 뜨고, 이 초록은 거기까지 안 따라간다.
+    <div className="flex flex-col gap-2 rounded-lg border border-naver bg-naver-soft p-3">
       <div className="flex items-baseline justify-between gap-2">
         <span className="min-w-0 truncate text-subtitle">{p.name}</span>
         <Distance meters={distanceM(here, p)} />
       </div>
+      {/* 색만으로 알리지 않는다 (CLAUDE.md). 초록이 무슨 뜻인지 글자로 적는다 */}
+      <p className="text-caption font-medium text-naver-strong">네이버 검색 결과</p>
       <p className="text-caption text-muted-foreground">
         {p.roadAddress || p.address}
       </p>
