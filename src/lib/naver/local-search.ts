@@ -93,27 +93,59 @@ function toCandidate(row: unknown): PlaceCandidate | null {
   };
 }
 
+/** 합쳐서 이만큼까지. 질의 3개 × 5건 = 15 가 상한이다 */
+const MAX_MERGED = 15;
+
 /**
  * 상호 검색.
  *
  * **이 API 는 좌표를 안 받는다.** 파라미터가 `query` / `display` 뿐이라
  * "내 근처에서 찾아줘" 를 요청할 방법이 없고, 그냥 "써브웨이" 로 치면 전국 기준
- * 인기순이라 시청 근처 것들이 올라온다. 그래서 `area`("광진구 구의동") 를 받아
- * **검색어 앞에 붙인다.** 그게 근처로 좁히는 유일한 수단이다.
+ * 인기순이라 시청 근처 것들이 올라온다. 그래서 `areas`(["광진구 구의동", "광진구"])
+ * 를 받아 **검색어 앞에 붙인다.** 그게 근처로 좁히는 유일한 수단이다.
  *
- * 지역명을 붙이면 0건이 되는 경우가 있다 — 상호에 지역이 안 붙는 체인점이나
- * 이미 주소까지 다 친 질의가 그렇다. 그때는 원래 질의로 한 번 더 찾는다.
- * 추가 호출은 0건일 때만 나가므로 평소 쿼터는 그대로다.
+ * **여러 질의를 던지고 합친다** (2026-08-10). 예전에는 좁은 질의가 1건이라도
+ * 물어오면 거기서 끝냈는데, 그 방식은 5건 제한과 만나면 조용히 후보를 잃는다.
+ * 경복궁역에서 "써브웨이" 를 쳤을 때 경복궁점이 아예 안 나오고 종로점이 먼저
+ * 나온 게 그 증상이었다 — 질의에 "종로구" 가 들어가니 이름에 '종로' 가 붙은
+ * 지점들이 5칸을 먼저 채웠고, 옆 동에 있는 경복궁점은 들어올 자리가 없었다.
+ *
+ * **5건 제한은 질의마다 따로 걸린다.** 그래서 좁은 그물(동)·넓은 그물(구)·
+ * 맨 질의를 동시에 던져서 각각 5칸씩 받아 합친다. 무엇이 가까운지는 화면이
+ * 거리순으로 세워서 판단한다 — 멀리서 딸려온 것은 알아서 아래로 내려간다.
+ *
+ * 한 질의가 실패해도 나머지로 답한다. **전부 실패했을 때만** 이유를 올린다 —
+ * 그래야 429/503 이 화면의 안내로 이어진다.
  */
 export async function searchLocal(
   query: string,
-  area?: string | null,
+  areas: readonly string[] = [],
 ): Promise<PlaceCandidate[]> {
-  if (area) {
-    const near = await callSearch(`${area} ${query}`);
-    if (near.length > 0) return near;
+  // 맨 질의는 항상 넣는다. 체인점은 상호에 지역이 안 붙어서, 지역명을 붙이면
+  // 오히려 안 걸리는 경우가 있다.
+  const queries = [...areas.map((a) => `${a} ${query}`), query];
+  const settled = await Promise.allSettled(queries.map((q) => callSearch(q)));
+
+  const ok = settled.filter(
+    (r): r is PromiseFulfilledResult<PlaceCandidate[]> =>
+      r.status === "fulfilled",
+  );
+  if (ok.length === 0) throw (settled[0] as PromiseRejectedResult).reason;
+
+  // 같은 가게가 여러 질의에서 온다. 이름 + 좌표 소수 4자리(약 11m)로 묶는다 —
+  // 서로 다른 지점이 11m 안에 겹치는 일은 없다.
+  const seen = new Set<string>();
+  const merged: PlaceCandidate[] = [];
+  for (const r of ok) {
+    for (const p of r.value) {
+      const key = `${p.name.toLowerCase()}|${p.lat.toFixed(4)}|${p.lng.toFixed(4)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(p);
+      if (merged.length >= MAX_MERGED) return merged;
+    }
   }
-  return callSearch(query);
+  return merged;
 }
 
 async function callSearch(query: string): Promise<PlaceCandidate[]> {

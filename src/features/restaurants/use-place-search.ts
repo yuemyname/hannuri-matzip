@@ -14,12 +14,12 @@ export type PlaceSearchResult = {
 
 async function search(
   query: string,
-  area: string | null,
+  areas: string[],
 ): Promise<PlaceSearchResult> {
   const res = await fetch("/api/places/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, area }),
+    body: JSON.stringify({ query, areas }),
   });
 
   const body: unknown = await res.json().catch(() => null);
@@ -48,16 +48,17 @@ async function search(
  * 상호 검색. 두 글자 미만이면 아예 부르지 않는다 — 쿼터가 하루 단위라 아낀다.
  * 입력 디바운스는 호출부가 한다 (타이핑마다 부르면 안 된다).
  *
- * `area` 는 지금 보고 있는 곳의 행정동이다. 지역검색 API 가 좌표를 안 받아서
- * 이걸 검색어에 붙이는 게 근처로 좁히는 유일한 방법이다 — 없으면 전국 인기순이라
- * 시청 근처 것들이 올라온다. **캐시 키에도 넣는다.** 안 넣으면 다른 동네에서
- * 같은 상호를 쳤을 때 남의 동네 결과가 그대로 나온다.
+ * `areas` 는 지금 보고 있는 곳의 지역명들이다 (좁은 것부터: 동, 구). 지역검색
+ * API 가 좌표를 안 받아서 이걸 검색어에 붙이는 게 근처로 좁히는 유일한 방법이다 —
+ * 없으면 전국 인기순이라 시청 근처 것들이 올라온다. **캐시 키에도 넣는다.**
+ * 안 넣으면 다른 동네에서 같은 상호를 쳤을 때 남의 동네 결과가 그대로 나온다.
  */
-export function usePlaceSearch(query: string, area: string | null) {
+export function usePlaceSearch(query: string, areas: string[]) {
   const trimmed = query.trim();
   return useQuery({
-    queryKey: ["places", "search", trimmed, area],
-    queryFn: () => search(trimmed, area),
+    // 배열을 그대로 키에 넣으면 매번 새 참조라 캐시가 안 먹는다. 문자열로 굳힌다.
+    queryKey: ["places", "search", trimmed, areas.join("|")],
+    queryFn: () => search(trimmed, areas),
     enabled: trimmed.length >= 2,
     // 같은 상호를 다시 치는 일이 잦다. 서버도 캐시하지만 여기서 한 번 더 막는다.
     staleTime: 5 * 60_000,

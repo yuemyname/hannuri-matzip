@@ -13,20 +13,42 @@ import { LocalSearchError, searchLocal } from "@/lib/naver/local-search";
 export const runtime = "nodejs";
 
 const MAX_QUERY_LEN = 60;
+/** 지역명은 두 개까지 (동·구). 늘리면 그만큼 업스트림 호출이 늘어난다 */
+const MAX_AREAS = 2;
+const MAX_AREA_LEN = 30;
+
+/**
+ * 지역명 정리. 길거나 이상한 값이 그대로 질의에 붙지 않게 여기서 자른다.
+ * **개수도 여기서 막는다** — 하나가 곧 업스트림 호출 하나라, 안 막으면 클라이언트가
+ * 원하는 만큼 쿼터를 태울 수 있다.
+ */
+function cleanAreas(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const v of value) {
+    if (typeof v !== "string") continue;
+    const area = v.trim().slice(0, MAX_AREA_LEN);
+    if (area.length === 0 || out.includes(area)) continue;
+    out.push(area);
+    if (out.length >= MAX_AREAS) break;
+  }
+  return out;
+}
 
 export async function POST(request: Request) {
   let query: unknown;
-  let area: unknown;
+  let areas: unknown;
   try {
     const body: unknown = await request.json();
     const rec =
       typeof body === "object" && body !== null
-        ? (body as { query?: unknown; area?: unknown })
+        ? (body as { query?: unknown; areas?: unknown })
         : null;
     query = rec?.query ?? null;
-    // 클라이언트가 역지오코딩으로 얻은 행정동 ("광진구 구의동").
-    // 이 API 는 좌표를 못 받아서, 근처로 좁히는 유일한 수단이 검색어에 붙이는 것이다.
-    area = rec?.area ?? null;
+    // 클라이언트가 역지오코딩으로 얻은 지역명, 좁은 것부터
+    // (["광진구 구의동", "광진구"]). 이 API 는 좌표를 못 받아서, 근처로 좁히는
+    // 유일한 수단이 검색어에 붙이는 것이다.
+    areas = rec?.areas ?? null;
   } catch {
     return NextResponse.json(
       { error: "요청 형식이 올바르지 않아요" },
@@ -49,13 +71,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const places = await searchLocal(
-      query.trim(),
-      // 길거나 이상한 값이 그대로 질의에 붙지 않게 여기서 자른다
-      typeof area === "string" && area.trim().length > 0
-        ? area.trim().slice(0, 30)
-        : null,
-    );
+    const places = await searchLocal(query.trim(), cleanAreas(areas));
     return NextResponse.json({ places });
   } catch (e) {
     const status = e instanceof LocalSearchError ? e.status : 502;

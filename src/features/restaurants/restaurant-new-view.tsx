@@ -20,7 +20,7 @@ import {
 } from "@/features/categories/api";
 import { useMapView } from "@/features/map/map-store";
 import { useCurrentPosition } from "@/features/map/use-current-position";
-import { areaNameOf } from "@/features/map/reverse-geocode";
+import { areaNamesOf } from "@/features/map/reverse-geocode";
 import { usePinMode } from "./pin-store";
 import { usePlaceSearch, type PlaceCandidate } from "./use-place-search";
 import {
@@ -53,6 +53,9 @@ import { Switch } from "@/components/ui/switch";
  * 검색 좌표를 그대로 쓴다. 그 사실을 화면에 적어 준다.
  */
 export type Step = "search" | "pin" | "detail";
+
+/** 매번 새 배열을 만들면 쿼리 키가 바뀌어 검색이 다시 나간다 */
+const EMPTY_AREAS: string[] = [];
 
 export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   const router = useRouter();
@@ -95,19 +98,19 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
 
   const debounced = useDebounced(query, 400);
 
-  // 지역검색 API 가 좌표를 안 받는다. 지금 보고 있는 곳의 행정동을 얻어
+  // 지역검색 API 가 좌표를 안 받는다. 지금 보고 있는 곳의 지역명(동·구)을 얻어
   // 검색어에 붙이는 게 근처로 좁히는 유일한 방법이다 (SPEC §4.4).
-  // 못 얻으면 null — 예전처럼 전국 기준으로 찾는다. 등록을 막지는 않는다.
+  // 못 얻으면 빈 배열 — 예전처럼 전국 기준으로 찾는다. 등록을 막지는 않는다.
   const here = mapCenter ?? geoCenter;
-  const { data: area = null } = useQuery({
+  const { data: areas = EMPTY_AREAS } = useQuery({
     queryKey: ["area", here.lat.toFixed(3), here.lng.toFixed(3)],
-    queryFn: () => areaNameOf(here),
+    queryFn: () => areaNamesOf(here),
     // 소수점 3자리(약 100m)로 묶는다. 지도를 조금 움직일 때마다 다시 부를 이유가 없다.
     staleTime: 30 * 60_000,
     retry: false,
   });
 
-  const search = usePlaceSearch(debounced, area);
+  const search = usePlaceSearch(debounced, areas);
 
   // 지역명을 붙여도 먼 데가 섞여 온다 (체인점은 상호에 지역이 안 붙는다).
   // 가까운 순으로 세워 두면 눈으로 고르기 쉽다.
