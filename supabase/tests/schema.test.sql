@@ -15,9 +15,9 @@ begin
    where table_schema = 'public'
      and table_type = 'BASE TABLE'
      and table_name <> 'spatial_ref_sys';
-  -- categories 가 늘어 7개다 (2026-08-09, 종류 목록을 코드에서 DB 로 옮겼다).
-  if n <> 7 then
-    raise exception '앱 테이블 7개를 기대했는데 %개다', n;
+  -- categories(2026-08-09) + feedback(2026-08-10) 이 늘어 8개다.
+  if n <> 8 then
+    raise exception '앱 테이블 8개를 기대했는데 %개다', n;
   end if;
 end
 $$;
@@ -1031,4 +1031,96 @@ begin
 end
 $$;
 
+
+-- ── 9. 피드백 (2026-08-10, SPEC §4.7) ────────────────────────────────
+-- 빈 글·장문은 못 들어간다. 화면의 검사와 같은 뜻이어야 한다 —
+-- 갈라지면 화면은 통과시키는데 저장이 실패한다.
+do $$
+begin
+  begin
+    insert into feedback(body) values ('   ');
+    raise exception '공백뿐인 피드백이 거부되지 않았다';
+  exception when check_violation then null;
+  end;
+
+  begin
+    insert into feedback(body) values (repeat('가', 1001));
+    raise exception '1001자 피드백이 거부되지 않았다';
+  exception when check_violation then null;
+  end;
+
+  -- 딱 1000자는 통과해야 한다. 경계에서 한 칸 어긋나면 화면과 갈라진다.
+  insert into feedback(body) values (repeat('나', 1000));
+  insert into feedback(body) values ('마커가 겹쳐서 안 눌려요');
+end
+$$;
+
+-- **누가 썼는지 남기지 않는다** (SPEC §4.7). user_id 열이 생기면 익명이 아니게 된다.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'feedback'
+       and column_name in ('user_id', 'created_by')
+  ) then
+    raise exception 'feedback 에 작성자 열이 생겼다 — 익명이 아니게 된다';
+  end if;
+end
+$$;
+
+-- **쓰기만 열려 있고 읽기는 닫혀 있다.** select 정책이 생기면 남의 피드백을
+-- anon 키로 읽을 수 있게 된다. 읽는 길은 service_role 라우트 하나뿐이어야 한다.
+do $$
+declare cmds text;
+begin
+  select string_agg(distinct cmd, ',' order by cmd) into cmds
+    from pg_policies where schemaname = 'public' and tablename = 'feedback';
+  if cmds is distinct from 'INSERT' then
+    raise exception 'feedback 정책이 INSERT 하나가 아니다: %', coalesce(cmds, '(없음)');
+  end if;
+
+  if not exists (
+    select 1 from pg_tables
+     where schemaname = 'public' and tablename = 'feedback' and rowsecurity
+  ) then
+    raise exception 'feedback 에 RLS 가 꺼져 있다';
+  end if;
+end
+$$;
+
+-- 실제로 못 읽는지 롤을 바꿔 확인한다. 정책 목록만 보고 넘기면,
+-- 나중에 누가 select 를 열어도 위 검사만 고쳐 놓고 지나갈 수 있다.
+do $$
+declare n int;
+begin
+  set local role authenticated;
+  begin
+    select count(*) into n from feedback;
+  exception when others then
+    n := -1;   -- 못 읽으면 그것도 정답이다
+  end;
+  reset role;
+  if n <> 0 and n <> -1 then
+    raise exception 'authenticated 롤이 피드백 %건을 읽었다', n;
+  end if;
+end
+$$;
+
+-- 관리자 화면이 "안 본 것 먼저, 그다음 최근 순" 으로 읽는다.
+do $$
+declare first_body text;
+begin
+  update feedback set resolved = true where body = '마커가 겹쳐서 안 눌려요';
+  insert into feedback(body) values ('최근에 들어온 안 본 것');
+
+  select f.body into first_body from feedback f
+   order by f.resolved asc, f.created_at desc limit 1;
+  if first_body <> '최근에 들어온 안 본 것' then
+    raise exception '안 본 피드백이 맨 위가 아니다: %', first_body;
+  end if;
+end
+$$;
+
+-- 배너는 언제나 이 파일의 **마지막 줄**이다. 뒤에 검사를 붙이면
+-- 그 검사가 실패해도 화면에는 통과가 찍힌다 (2026-08-10 에 실제로 그랬다).
 \echo '✓ 스키마 검증 통과'

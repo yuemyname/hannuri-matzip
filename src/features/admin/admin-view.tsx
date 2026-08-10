@@ -24,15 +24,19 @@ import {
   adminLogin,
   adminLogout,
   adminStatus,
+  deleteFeedback,
   deleteRestaurant,
   deleteReview,
   listCategories,
+  listFeedback,
   listRestaurants,
   listReviews,
   patchRestaurant,
   patchReview,
   removeCategory,
   renameCategory,
+  resolveFeedback,
+  type AdminFeedback,
   type AdminRestaurant,
   type AdminReview,
 } from "./api";
@@ -127,6 +131,7 @@ const TABS = [
   { key: "reviews", label: "리뷰" },
   { key: "restaurants", label: "맛집" },
   { key: "categories", label: "종류" },
+  { key: "feedback", label: "피드백" },
 ] as const;
 
 function Console() {
@@ -166,6 +171,7 @@ function Console() {
       {tab === "reviews" && <Reviews />}
       {tab === "restaurants" && <Restaurants />}
       {tab === "categories" && <Categories />}
+      {tab === "feedback" && <Feedback />}
     </div>
   );
 }
@@ -223,6 +229,93 @@ function Reviews() {
         </ul>
       )}
     </Section>
+  );
+}
+
+/**
+ * 피드백 목록 — 안 본 것이 위로, 그다음 최근 순 (서버가 그 순서로 준다).
+ *
+ * **내용을 고칠 칸은 없다.** 남이 쓴 말이라 고칠 이유가 없고, 고칠 수 있으면
+ * 나중에 그게 원문인지 알 수 없다. 할 수 있는 건 "봤다" 표시와 삭제뿐이다.
+ */
+function Feedback() {
+  return (
+    <Section
+      queryKey={["admin", "feedback"]}
+      queryFn={listFeedback}
+      empty="아직 들어온 피드백이 없어요"
+    >
+      {(items) => (
+        <ul className="flex flex-col gap-2">
+          {items.map((f) => (
+            <li key={f.id}>
+              <FeedbackRow item={f} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
+function FeedbackRow({ item }: { item: AdminFeedback }) {
+  const qc = useQueryClient();
+  const done = () => qc.invalidateQueries({ queryKey: ["admin", "feedback"] });
+
+  const toggle = useMutation({
+    mutationFn: () => resolveFeedback(item.id, !item.resolved),
+    onSuccess: done,
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteFeedback(item.id),
+    onSuccess: done,
+  });
+
+  return (
+    <div className={ROW}>
+      <div className="flex items-baseline justify-between gap-2">
+        {/* 상태를 색이 아니라 글자로 먼저 알린다 (CLAUDE.md) */}
+        <span className="shrink-0 text-caption text-muted-foreground">
+          {item.resolved ? "처리함" : "안 봄"}
+        </span>
+        <span className="tnum shrink-0 text-caption text-muted-foreground">
+          {item.created_at.slice(0, 10)}
+        </span>
+      </div>
+
+      {/* 줄바꿈을 그대로 살린다. 여러 줄로 적어 보낸 걸 한 줄로 뭉치면 안 읽힌다 */}
+      <p className={`whitespace-pre-wrap ${item.resolved ? "text-muted-foreground" : ""}`}>
+        {item.body}
+      </p>
+
+      {(toggle.isError || remove.isError) && (
+        <p role="alert" className="text-caption text-danger">
+          {(toggle.error ?? remove.error)?.message}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant={item.resolved ? "ghost" : "outline"}
+          disabled={toggle.isPending}
+          onClick={() => toggle.mutate()}
+        >
+          {item.resolved ? "다시 안 봄으로" : "처리했어요"}
+        </Button>
+        <ConfirmDialog
+          trigger={
+            <Button size="sm" variant="danger">
+              지우기
+            </Button>
+          }
+          title="이 피드백을 지울까요?"
+          description="되돌릴 수 없습니다. 처리 표시만 하고 남겨 두는 쪽이 보통 낫습니다."
+          confirmLabel="지우기"
+          onConfirm={() => remove.mutate()}
+        />
+      </div>
+    </div>
   );
 }
 

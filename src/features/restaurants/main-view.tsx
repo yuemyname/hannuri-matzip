@@ -63,6 +63,7 @@ const MENU = [
   { href: "/bill", label: "밥값 내기", primary: false },
   { href: "/restaurants/new", label: "식당 등록", primary: false },
   { href: "/me", label: "MY", primary: false },
+  { href: "/feedback", label: "피드백", primary: false },
 ] as const;
 
 type Position = ReturnType<typeof useCurrentPosition>;

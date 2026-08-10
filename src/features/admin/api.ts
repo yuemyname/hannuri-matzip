@@ -31,6 +31,13 @@ export type AdminRestaurant = {
   reservation_url: string | null;
 };
 
+export type AdminFeedback = {
+  id: string;
+  body: string;
+  resolved: boolean;
+  created_at: string;
+};
+
 export type AdminCategory = {
   name: string;
   sort_order: number;
@@ -103,6 +110,13 @@ export const patchRestaurant = (body: {
 }) => call<{ ok: true }>("restaurants", { method: "PATCH", body });
 export const deleteRestaurant = (id: string) =>
   call<{ ok: true }>("restaurants", { method: "DELETE", body: { id } });
+
+export const listFeedback = () =>
+  call<{ feedback: AdminFeedback[] }>("feedback").then((r) => r.feedback);
+export const resolveFeedback = (id: string, resolved: boolean) =>
+  call<{ ok: true }>("feedback", { method: "PATCH", body: { id, resolved } });
+export const deleteFeedback = (id: string) =>
+  call<{ ok: true }>("feedback", { method: "DELETE", body: { id } });
 
 export const listCategories = () =>
   call<{ categories: AdminCategory[] }>("categories").then((r) => r.categories);
