@@ -5,8 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Distance } from "@/components/distance";
 import { CategoryChip } from "@/components/category-chip";
-import { matchCategory, type Category } from "@/lib/categories";
-import { useCategories } from "@/features/categories/api";
+import { categoryFromNaver, matchCategory, type Category } from "@/lib/categories";
+import { ensureCategory, useCategories, CATEGORIES_KEY } from "@/features/categories/api";
 import { useMapView } from "@/features/map/map-store";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { areaNamesOf } from "@/features/map/reverse-geocode";
@@ -130,6 +130,8 @@ export function DiscoverView() {
                   // 두 번 누르게 되고, 두 번째는 인덱스가 막는다.
                   void qc.invalidateQueries({ queryKey: ["restaurants"] });
                   void qc.invalidateQueries({ queryKey: ["discover"] });
+                  // 새 종류가 생겼을 수 있다. 필터칩·점메추가 같은 목록을 쓴다.
+                  void qc.invalidateQueries({ queryKey: CATEGORIES_KEY });
                 }}
               />
             </li>
@@ -145,7 +147,7 @@ const EMPTY: string[] = [];
 function CandidateRow({
   place: p,
   here,
-  known,
+  known: knownList,
   onAdded,
 }: {
   place: PlaceCandidate;
@@ -153,15 +155,28 @@ function CandidateRow({
   known: readonly Category[];
   onAdded: () => void;
 }) {
-  // 네이버 분류로 종류를 짐작한다. 못 맞히면 사용자가 고른다 — 억지로 하나
-  // 넣으면 나중에 "왜 이게 카페지" 가 된다.
-  const guess = matchCategory(p.category, known);
+  /**
+   * 종류는 **네이버 분류를 기준으로 자동으로 정한다** (2026-08-10 요청).
+   *
+   *   1. 우리 목록에 있는 이름이면 그것 ("음식점>한식>해장국" → 한식)
+   *   2. 없으면 네이버 중분류로 **새 종류를 만든다** ("음식점>아시아음식>…" → 아시안음식)
+   *   3. 그것도 못 뽑으면(먹는 것이 아니거나 이름 규칙에 안 맞으면) 그때만 묻는다
+   *
+   * 2단계는 DB 에 없던 종류가 생기는 일이라, 담을 때 **맛집보다 먼저** 만든다 —
+   * `restaurants.category` 가 `categories` 를 가리키는 외래키다 (CLAUDE.md).
+   */
+  const known = knownList;
+  const matched = matchCategory(p.category, known);
+  const derived = matched === null ? categoryFromNaver(p.category) : null;
   const [picked, setPicked] = useState<Category | null>(null);
-  const category = guess ?? picked;
+  const category = matched ?? derived ?? picked;
+  /** 목록에 없는 이름이면 담기 전에 종류부터 만들어야 한다 */
+  const isNew = category !== null && !known.includes(category);
 
   const add = useMutation({
-    mutationFn: () =>
-      createRestaurant({
+    mutationFn: async () => {
+      if (isNew) await ensureCategory(category!);
+      return createRestaurant({
         name: p.name,
         category: category!,
         address: p.address || null,
@@ -178,7 +193,8 @@ function CandidateRow({
         reservable: false,
         reservationUrl: null,
         menus: [],
-      }),
+      });
+    },
     onSuccess: onAdded,
   });
 
@@ -199,9 +215,18 @@ function CandidateRow({
         <p className="text-caption text-muted-foreground">{p.category}</p>
       )}
 
-      {/* 못 맞힌 경우에만 물어본다. 맞힌 경우까지 칩을 깔면 목록이 길어져서
-          훑어보기 어려워진다. */}
-      {guess === null && (
+      {/* 자동으로 정한 종류를 적어 둔다. 안 적으면 무엇으로 담기는지 모른 채
+          누르게 되고, 틀렸을 때 고쳐도 되는지도 알 수 없다. */}
+      {category !== null && (
+        <p className="text-caption text-muted-foreground">
+          종류 <span className="text-foreground">{category}</span>
+          {isNew && " (새로 만들어져요)"}
+        </p>
+      )}
+
+      {/* **자동으로도 못 정했을 때만** 묻는다 (먹는 것이 아니거나 이름 규칙에
+          안 맞는 경우). 정해진 줄까지 칩을 깔면 목록이 길어져 훑기 어렵다. */}
+      {matched === null && derived === null && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-caption text-muted-foreground">종류</span>
           {known.map((c) => (

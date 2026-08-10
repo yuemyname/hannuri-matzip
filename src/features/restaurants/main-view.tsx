@@ -61,7 +61,6 @@ const ACTION_PRIMARY =
 const MENU = [
   { href: "/pick", label: "점메추", primary: true },
   { href: "/bill", label: "밥값 내기", primary: false },
-  { href: "/discover", label: "검색", primary: false },
   { href: "/restaurants/new", label: "식당 등록", primary: false },
   { href: "/me", label: "MY", primary: false },
   { href: "/feedback", label: "피드백", primary: false },
@@ -165,6 +164,15 @@ function MapActions({ position }: { position: Position }) {
           한 번이 아니라 계속 하는 일이다. */}
       <div className="flex items-center gap-2">
         <LocateButton position={position} />
+        {/* [검색] 은 메뉴 안이 아니라 밖에 둔다 (2026-08-10). 처음 텅 빈 지도를
+            채우는 길이라 제일 자주 눌리는데, 한 겹 접혀 있으면 안 찾는다. */}
+        <Link
+          href="/discover"
+          aria-label="검색"
+          className="pointer-events-auto inline-flex size-12 items-center justify-center rounded-chip border border-border bg-background text-title leading-none shadow-pop hover:bg-muted"
+        >
+          <span aria-hidden="true">🔍</span>
+        </Link>
         <button
           ref={toggleRef}
           type="button"

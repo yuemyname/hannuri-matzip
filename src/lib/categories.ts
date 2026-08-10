@@ -75,6 +75,39 @@ export function matchCategory(
 }
 
 /**
+ * 네이버 분류에서 **새 종류 이름**을 뽑는다. 못 뽑으면 null.
+ *
+ * `matchCategory` 가 우리 목록에서 못 찾았을 때 쓴다 — 찾았으면 그게 먼저다.
+ * 네이버 분류는 `큰분류>중분류>소분류` 꼴이고 쉼표로 여럿이 묶이기도 한다
+ * ("음식점>일식>초밥,롤"). **중분류를 쓴다** — 큰분류("음식점")는 종류가 아니고,
+ * 소분류("초밥")는 너무 잘아서 종류가 끝없이 늘어난다.
+ *
+ * **먹는 것에서만 만든다.** 큰분류가 음식이 아니면 null 이다. "생활,편의>미용실"
+ * 같은 게 들어오면 「미용실」 종류가 생기는데, 종류는 지도 필터칩으로 모두에게
+ * 보이고 쓰는 맛집이 있으면 지우지도 못한다 — 한 번 새면 치우기 어렵다.
+ *
+ * 이건 **네이버 분류 체계에 대한 규칙**이지 우리 종류 목록이 아니다. 우리 목록의
+ * 정본은 여전히 DB 다 (파일 맨 위 주석).
+ */
+const NAVER_FOOD_TOP = ["음식점", "카페", "디저트", "술집", "베이커리"];
+
+export function categoryFromNaver(naverCategory: string): Category | null {
+  const levels = naverCategory.split(">");
+  const top = levels[0] ?? "";
+  // 큰분류가 먹는 것인가 ("카페,디저트>카페" 처럼 쉼표로 묶여 오기도 한다)
+  if (!NAVER_FOOD_TOP.some((f) => top.includes(f))) return null;
+
+  // **중분류가 없으면 만들지 않는다.** 큰분류만 있는 값("음식점")으로 종류를 만들면
+  // 이름이 「음식점」인 종류가 생기는데, 그건 분류가 아니고 `matchCategory` 가
+  // 일부러 무시하는 값이라 다음부터 아무것도 안 맞는다.
+  const mid = levels[1];
+  if (mid === undefined) return null;
+  const name = normalizeCategory(mid.split(",")[0] ?? "");
+  // 이름 규칙은 DB 제약과 같아야 한다. 못 쓰는 이름이면 만들지 않는다.
+  return categoryError(name) === null ? name : null;
+}
+
+/**
  * 종류별 칩 색.
  *
  * 목록이 열려 버려서 이름마다 색을 손으로 정해 둘 수 없다. 대신 이름을 숫자로
