@@ -1,0 +1,248 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Distance } from "@/components/distance";
+import { CategoryChip } from "@/components/category-chip";
+import { matchCategory, type Category } from "@/lib/categories";
+import { useCategories } from "@/features/categories/api";
+import { useMapView } from "@/features/map/map-store";
+import { useCurrentPosition } from "@/features/map/use-current-position";
+import { areaNamesOf } from "@/features/map/reverse-geocode";
+import {
+  usePlaceSearch,
+  type PlaceCandidate,
+} from "@/features/restaurants/use-place-search";
+import { createRestaurant, DuplicateRestaurantError } from "@/features/restaurants/create";
+import { fetchRegisteredKeys, placeKey } from "./api";
+
+/**
+ * 주변 찾기 (2026-08-10 요청) — 처음 텅 빈 지도를 채우는 지름길.
+ *
+ * **"별점 4점 이상" 같은 조건은 못 건다.** 네이버 지역검색 API 가 주는 건
+ * 이름·분류·주소·전화·좌표·플레이스 링크뿐이고, 별점과 후기 수는 안 준다
+ * (2026-08-08 실제 응답으로 확인). 플레이스 화면에서 긁어오는 건 약관 위반이라
+ * 이 프로젝트가 처음부터 안 하기로 한 것이다 (SPEC §0).
+ *
+ * 그래서 **품질 판단을 사람에게 남긴다.** 근처 가게를 뿌려 주기만 하고, 아는
+ * 집이면 탭 한 번에 등록된다. 이름 치고 핀 찍는 과정이 통째로 빠지는 게 이
+ * 화면의 값어치고, "좋은 집을 골라 준다" 는 값어치는 애초에 팔 수 없다.
+ *
+ * 지도에 후보 핀을 뿌리지는 않는다. 진짜 마커와 섞이면 어느 게 등록된 곳인지
+ * 알 수 없고, 등록하고 나면 어차피 마커로 뜬다.
+ */
+export function DiscoverView() {
+  const qc = useQueryClient();
+  const { center: geoCenter } = useCurrentPosition();
+  const mapCenter = useMapView((s) => s.center);
+  const here = mapCenter ?? geoCenter;
+
+  const categoryList = useCategories();
+  /** null 이면 "맛집" 으로 두루 찾는다. 고르면 그 종류로 좁힌다 */
+  const [category, setCategory] = useState<Category | null>(null);
+
+  const { data: areas = EMPTY } = useQuery({
+    queryKey: ["area", here.lat.toFixed(3), here.lng.toFixed(3)],
+    queryFn: () => areaNamesOf(here),
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
+
+  // 이미 등록된 곳은 후보에서 뺀다. 등록 직후에도 바로 사라져야 해서 같은 키를 턴다.
+  const registered = useQuery({
+    queryKey: ["discover", "registered", here.lat.toFixed(3), here.lng.toFixed(3)],
+    queryFn: () => fetchRegisteredKeys(here),
+    staleTime: 60_000,
+  });
+
+  const search = usePlaceSearch(category ?? "맛집", areas);
+
+  const candidates = useMemo(() => {
+    const known = registered.data ?? new Set<string>();
+    return (search.data?.places ?? [])
+      .filter((p) => !known.has(placeKey(p.name, p.lat, p.lng)))
+      .sort((a, b) => distanceM(here, a) - distanceM(here, b));
+  }, [search.data, registered.data, here]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-caption text-muted-foreground">
+        지도 근처에서 아직 등록 안 된 가게예요. 아는 집을 눌러 담아 주세요.
+        네이버는 별점·후기 수를 안 주기 때문에 좋은 집인지는 앱이 모릅니다
+      </p>
+
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">무엇을 찾을까요</legend>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            aria-pressed={category === null}
+            onClick={() => setCategory(null)}
+            className={`inline-flex shrink-0 items-center rounded-chip px-3 py-1.5 text-label transition-colors ${
+              category === null
+                ? "bg-primary text-primary-foreground"
+                : "border border-border bg-background text-foreground hover:bg-muted"
+            }`}
+          >
+            두루
+          </button>
+          {(categoryList.data ?? []).map((c) => (
+            <CategoryChip
+              key={c}
+              category={c}
+              selected={category === c}
+              onToggle={(v) => setCategory(category === v ? null : v)}
+            />
+          ))}
+        </div>
+      </fieldset>
+
+      {search.isFetching && (
+        <p className="text-caption text-muted-foreground">찾는 중</p>
+      )}
+
+      {search.data?.error && (
+        <p role="status" className="text-caption text-muted-foreground">
+          {search.data.error}
+        </p>
+      )}
+
+      {!search.isFetching && !search.data?.error && candidates.length === 0 && (
+        // 빈 상태는 행동 유도 (CLAUDE.md). 여기서는 "다른 종류를 눌러 보라" 가 답이다.
+        <p role="status" className="text-caption text-muted-foreground">
+          {(search.data?.places ?? []).length > 0
+            ? "찾은 곳이 전부 이미 등록돼 있어요. 다른 종류를 눌러 보세요"
+            : "이 근처에서는 못 찾았어요. 지도를 옮기거나 다른 종류를 눌러 보세요"}
+        </p>
+      )}
+
+      {candidates.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {candidates.map((p) => (
+            <li key={placeKey(p.name, p.lat, p.lng)}>
+              <CandidateRow
+                place={p}
+                here={here}
+                known={categoryList.data ?? []}
+                onAdded={() => {
+                  // 지도 마커와 이 목록을 같이 턴다. 방금 담은 게 계속 보이면
+                  // 두 번 누르게 되고, 두 번째는 인덱스가 막는다.
+                  void qc.invalidateQueries({ queryKey: ["restaurants"] });
+                  void qc.invalidateQueries({ queryKey: ["discover"] });
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const EMPTY: string[] = [];
+
+function CandidateRow({
+  place: p,
+  here,
+  known,
+  onAdded,
+}: {
+  place: PlaceCandidate;
+  here: { lat: number; lng: number };
+  known: readonly Category[];
+  onAdded: () => void;
+}) {
+  // 네이버 분류로 종류를 짐작한다. 못 맞히면 사용자가 고른다 — 억지로 하나
+  // 넣으면 나중에 "왜 이게 카페지" 가 된다.
+  const guess = matchCategory(p.category, known);
+  const [picked, setPicked] = useState<Category | null>(null);
+  const category = guess ?? picked;
+
+  const add = useMutation({
+    mutationFn: () =>
+      createRestaurant({
+        name: p.name,
+        category: category!,
+        address: p.address || null,
+        roadAddress: p.roadAddress || null,
+        lat: p.lat,
+        lng: p.lng,
+        // 가격대·메모·태그·예약은 비워 둔다. 아는 사람이 상세에서 채우면 된다 —
+        // 여기서 물어보면 "탭 한 번" 이라는 이 화면의 값어치가 사라진다.
+        priceRange: null,
+        phone: p.telephone || null,
+        memo: null,
+        naverPlaceUrl: p.link || null,
+        moodTags: [],
+        reservable: false,
+        reservationUrl: null,
+        menus: [],
+      }),
+    onSuccess: onAdded,
+  });
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 truncate text-subtitle">{p.name}</span>
+        <Distance meters={distanceM(here, p)} />
+      </div>
+      <p className="text-caption text-muted-foreground">
+        {p.roadAddress || p.address}
+      </p>
+      {p.category && (
+        <p className="text-caption text-muted-foreground">{p.category}</p>
+      )}
+
+      {/* 못 맞힌 경우에만 물어본다. 맞힌 경우까지 칩을 깔면 목록이 길어져서
+          훑어보기 어려워진다. */}
+      {guess === null && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-caption text-muted-foreground">종류</span>
+          {known.map((c) => (
+            <CategoryChip
+              key={c}
+              category={c}
+              selected={picked === c}
+              onToggle={(v) => setPicked(v)}
+            />
+          ))}
+        </div>
+      )}
+
+      {add.isError && (
+        <p role="alert" className="text-caption text-danger">
+          {add.error instanceof DuplicateRestaurantError
+            ? "이미 등록돼 있어요"
+            : "담지 못했어요. 다시 눌러 주세요."}
+        </p>
+      )}
+
+      <Button
+        size="sm"
+        className="self-start"
+        disabled={category === null || add.isPending || add.isSuccess}
+        onClick={() => add.mutate()}
+      >
+        {add.isPending
+          ? "담는 중"
+          : add.isSuccess
+            ? "담았어요"
+            : category === null
+              ? "종류를 골라 주세요"
+              : "여기 담기"}
+      </Button>
+    </div>
+  );
+}
+
+/** 얼마나 가까운지 보여주는 용도라 근사로 충분하다 */
+function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+) {
+  const dLat = (a.lat - b.lat) * 111_320;
+  const dLng = (a.lng - b.lng) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.sqrt(dLat * dLat + dLng * dLng);
+}
