@@ -15,7 +15,8 @@ import {
   type PlaceCandidate,
 } from "@/features/restaurants/use-place-search";
 import { createRestaurant, DuplicateRestaurantError } from "@/features/restaurants/create";
-import { fetchRegisteredKeys, placeKey } from "./api";
+import { fetchRegisteredNearby, placeKey } from "./api";
+import { RestaurantCard } from "@/features/restaurants/restaurant-card";
 
 /**
  * 주변 찾기 (2026-08-10 요청) — 처음 텅 빈 지도를 채우는 지름길.
@@ -31,6 +32,11 @@ import { fetchRegisteredKeys, placeKey } from "./api";
  *
  * 지도에 후보 핀을 뿌리지는 않는다. 진짜 마커와 섞이면 어느 게 등록된 곳인지
  * 알 수 없고, 등록하고 나면 어차피 마커로 뜬다.
+ *
+ * **내 지도에 이미 있는 곳도 맨 위에 몇 개 얹는다** (2026-08-10). 네이버 것만
+ * 늘어놓으면 "여긴 아무것도 없나" 로 보이고, 방금 담은 것이 어디로 갔는지도
+ * 모른다. 다만 이 화면의 일은 채우는 것이라 **우리 것은 맥락일 뿐**이다 —
+ * 최대 넷까지만 얹고 나머지 자리는 네이버 쪽이 가져간다.
  */
 export function DiscoverView() {
   const qc = useQueryClient();
@@ -49,17 +55,28 @@ export function DiscoverView() {
     retry: false,
   });
 
-  // 이미 등록된 곳은 후보에서 뺀다. 등록 직후에도 바로 사라져야 해서 같은 키를 턴다.
+  // 이미 등록된 곳. 후보에서 빼는 데도 쓰고, 맨 위에 얹는 데도 쓴다.
+  // 등록 직후에도 바로 반영돼야 해서 담은 뒤 이 키를 턴다.
   const registered = useQuery({
     queryKey: ["discover", "registered", here.lat.toFixed(3), here.lng.toFixed(3)],
-    queryFn: () => fetchRegisteredKeys(here),
+    queryFn: () => fetchRegisteredNearby(here),
     staleTime: 60_000,
   });
 
   const search = usePlaceSearch(category ?? "맛집", areas);
 
+  /** 맨 위에 얹는 우리 것. 가까운 순으로 넷까지 (아래 주석 참고) */
+  const mine = useMemo(
+    () => (registered.data ?? []).slice(0, MINE_MAX),
+    [registered.data],
+  );
+
   const candidates = useMemo(() => {
-    const known = registered.data ?? new Set<string>();
+    // **자르기 전 전체**로 거른다. 넷만 보고 거르면 다섯 번째로 가까운 등록분이
+    // 네이버 후보로 또 뜨고, 눌러도 인덱스가 막는다.
+    const known = new Set(
+      (registered.data ?? []).map((r) => placeKey(r.name, r.lat, r.lng)),
+    );
     return (search.data?.places ?? [])
       .filter((p) => !known.has(placeKey(p.name, p.lat, p.lng)))
       .sort((a, b) => distanceM(here, a) - distanceM(here, b));
@@ -68,8 +85,9 @@ export function DiscoverView() {
   return (
     <div className="flex flex-col gap-4">
       <p className="text-caption text-muted-foreground">
-        지도 근처에서 아직 등록 안 된 가게예요. 아는 집을 눌러 담아 주세요.
-        네이버는 별점·후기 수를 안 주기 때문에 좋은 집인지는 앱이 모릅니다
+        내 지도에 있는 곳을 먼저 보여주고, 그 아래는 네이버에서 찾은 아직 없는
+        가게예요. 아는 집을 눌러 담아 주세요. 네이버는 별점·후기 수를 안 주기
+        때문에 좋은 집인지는 앱이 모릅니다
       </p>
 
       <fieldset className="flex flex-col gap-2">
@@ -108,6 +126,34 @@ export function DiscoverView() {
         </p>
       )}
 
+      {mine.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-label font-medium">
+            내 지도에 있는 곳{" "}
+            <span className="tnum font-normal text-muted-foreground">
+              {registered.data?.length ?? 0}
+            </span>
+          </h3>
+          <ul className="flex flex-col gap-2">
+            {mine.map((r) => (
+              <li key={r.id}>
+                <RestaurantCard restaurant={r} />
+              </li>
+            ))}
+          </ul>
+          {/* 몇 개를 감췄는지 적는다. 조용히 자르면 "이게 전부" 로 읽힌다 */}
+          {(registered.data?.length ?? 0) > mine.length && (
+            <p className="text-caption text-muted-foreground">
+              가까운 {mine.length}곳만 보여줘요. 나머지는 지도에서 보세요
+            </p>
+          )}
+        </section>
+      )}
+
+      {candidates.length > 0 && (
+        <h3 className="text-label font-medium">네이버에서 찾은 곳</h3>
+      )}
+
       {!search.isFetching && !search.data?.error && candidates.length === 0 && (
         // 빈 상태는 행동 유도 (CLAUDE.md). 여기서는 "다른 종류를 눌러 보라" 가 답이다.
         <p role="status" className="text-caption text-muted-foreground">
@@ -143,6 +189,14 @@ export function DiscoverView() {
 }
 
 const EMPTY: string[] = [];
+
+/**
+ * 맨 위에 얹는 "내 지도에 있는 곳" 최대 개수.
+ *
+ * 이 화면의 일은 **채우는 것**이라 우리 것은 맥락일 뿐이다. 많이 얹으면 담을
+ * 것을 보러 와서 이미 담은 것만 스크롤하게 된다. 넘치는 만큼은 지도에서 본다.
+ */
+const MINE_MAX = 4;
 
 function CandidateRow({
   place: p,
