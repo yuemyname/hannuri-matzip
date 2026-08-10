@@ -260,7 +260,7 @@ create or replace function pick_restaurant(
   p_categories text[] default null,
   p_max_price smallint default null,
   p_exclude_days integer default 7,
-  p_exclude_ids uuid[] default null       -- 세션 내 [다시 뽑기] 가 같은 곳을 안 주게
+  p_exclude_ids uuid[] default null       -- 2026-08-10 부터 앱이 안 쓴다 (§4.2 뒤집힌 결정)
 ) returns table (...)  -- restaurants_within 컬럼 + mood_tags
 ```
 
@@ -394,7 +394,15 @@ DB 표로 빼면 화면에서 추가할 수는 있는데 아무 가중치도 안
 - 결과 카드: 맛집명, 대표메뉴, 거리, 평점, [여기로 갈게요] / [다시 뽑기]
   - 뽑힌 시점에 `recommendation_logs` 에 `accepted = null` 로 행을 남긴다
   - [여기로] → 그 행을 `accepted = true` 로 update
-  - [다시] → 직전 결과를 `accepted = false` 로 update, 같은 세션 내 재추첨에서 해당 맛집 제외
+  - [다시] → 직전 결과를 `accepted = false` 로 update하고 **전체에서 새로 뽑는다**
+    - ⚠️ **뒤집힌 결정 (2026-08-10).** 원래는 "같은 세션 내 재추첨에서 해당 맛집
+      제외" 였다. 사내 맛집은 한 동네에 몇 곳뿐이라 두세 번이면 후보가 바닥나고,
+      그때부터는 뽑을 게 없다는 말만 나왔다 (실사용 신고). 후보를 좁혀 가는 것보다
+      매번 새로 굴리는 쪽이 이 앱의 크기에 맞는다는 판단이다.
+    - 그래서 **같은 곳이 연달아 나올 수 있다.** 그때는 결과 카드가 그 사실을
+      한 줄로 적는다 — 안 적으면 [다시 뽑기] 가 안 먹은 줄로 읽힌다.
+    - `p_exclude_ids` 는 DB 함수에 그대로 남아 있다. 기본값이 null 이라 안 넘기면
+      없는 것과 같고, 마이그레이션은 덧붙이기만 한다.
 - 후보 0건일 때: "반경을 넓히거나 필터를 풀어보세요" + [반경 200m로 넓히기] 버튼
 - 접근성: 애니메이션은 `prefers-reduced-motion` 존중, 해당 시 즉시 결과 표시
 

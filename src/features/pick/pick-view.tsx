@@ -69,22 +69,26 @@ export function PickView() {
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const [excludeRecent, setExcludeRecent] = useState(true);
 
-  // 세션 안에서 이미 뽑힌 것들. 서버가 이걸 받아 같은 곳을 피한다 (WBS 4.4 DoD).
-  const [seen, setSeen] = useState<string[]>([]);
+  /**
+   * **매번 전체에서 새로 뽑는다** (2026-08-10, 사용자 결정).
+   *
+   * 예전에는 이번 세션에서 뽑힌 곳을 모아 서버에 넘겨 제외시켰다 (WBS 4.4 DoD:
+   * "연속 5회 재추첨에 같은 곳이 다시 나오지 않는다"). 사내 맛집은 한 동네에
+   * 몇 곳뿐이라 두세 번이면 후보가 바닥나고, 그때부터는 뽑을 게 없다는 말만
+   * 나왔다. 후보를 좁혀 가는 것보다 매번 새로 굴리는 쪽이 이 앱의 크기에 맞는다.
+   *
+   * 그래서 **같은 곳이 연달아 나올 수 있다.** 고장이 아니라는 걸 화면이 말한다.
+   */
+  const [draws, setDraws] = useState(0);
+  const [repeated, setRepeated] = useState(false);
   const [result, setResult] = useState<NearbyRestaurant | null>(null);
   const [signatureMenu, setSignatureMenu] = useState<string | null>(null);
   const [reservationUrl, setReservationUrl] = useState<string | null>(null);
   const [logId, setLogId] = useState<string | null>(null);
   const [emptyPool, setEmptyPool] = useState(false);
 
-  /**
-   * **뺄 목록을 인자로 받는다.** 예전에는 `seen` 을 클로저로 읽었는데, 그러면
-   * "처음부터 다시" 처럼 목록을 비우고 곧바로 뽑는 길을 만들 수 없다 —
-   * `setSeen([])` 은 다음 렌더에나 반영되고, 그 사이에 나가는 요청은 여전히
-   * 예전 목록을 들고 간다.
-   */
   const pick = useMutation({
-    mutationFn: (excludeIds: readonly string[]) =>
+    mutationFn: () =>
       pickRestaurant({
         lat: center.lat,
         lng: center.lng,
@@ -93,17 +97,18 @@ export function PickView() {
         categories,
         maxPrice,
         excludeDays: excludeRecent ? EXCLUDE_DAYS : 0,
-        excludeIds,
       }),
-    onSuccess: (r, excludeIds) => {
+    onSuccess: (r) => {
       setEmptyPool(r.restaurant === null);
+      // 직전과 같은 곳인지 **이전 결과를 지우기 전에** 본다.
+      setRepeated(
+        r.restaurant !== null && result !== null && r.restaurant.id === result.id,
+      );
       setResult(r.restaurant);
       setSignatureMenu(r.signatureMenu);
       setReservationUrl(r.reservationUrl);
       setLogId(r.logId);
-      // 방금 요청에 실제로 쓴 목록 위에 쌓는다. 클로저의 `seen` 을 쓰면
-      // "처음부터 다시" 로 비운 것이 되살아난다.
-      setSeen(r.restaurant ? [...excludeIds, r.restaurant.id] : [...excludeIds]);
+      setDraws((n) => n + 1);
     },
   });
 
@@ -128,20 +133,7 @@ export function PickView() {
 
   const again = async () => {
     if (logId) await answerPick(logId, false);
-    pick.mutate(seen);
-  };
-
-  /**
-   * 근처를 다 봤을 때 빠져나가는 길.
-   *
-   * 사내 맛집은 한 동네에 몇 곳뿐이라 **두세 번이면 후보가 바닥난다.** 그때
-   * 예전에는 "반경 200m 안에 뽑을 곳이 없어요" 가 떴는데, 그건 거짓말이다 —
-   * 곳은 있고 방금 다 본 것뿐이다. 반경을 넓히거나 맛집을 등록하라고 안내해
-   * 봐야 원인이 아니라 엉뚱한 데를 고치게 된다.
-   */
-  const restart = () => {
-    setSeen([]);
-    pick.mutate([]);
+    pick.mutate();
   };
 
   return (
@@ -253,7 +245,7 @@ export function PickView() {
             **[다시 뽑기] 는 여기 하나뿐이다.** 결과 카드 안에도 두면 같은 이름의
             버튼이 둘이 되어 어느 쪽인지 헷갈린다. */}
         <Button
-          onClick={() => (hasResult ? void again() : pick.mutate(seen))}
+          onClick={() => (hasResult ? void again() : pick.mutate())}
           disabled={pick.isPending || shuffling}
         >
           {pick.isPending || shuffling
@@ -262,9 +254,9 @@ export function PickView() {
               ? "다시 뽑기"
               : "뽑아줘"}
         </Button>
-        {seen.length > 0 && (
+        {draws > 0 && (
           <span className="tnum text-caption text-muted-foreground">
-            {seen.length}번 뽑음
+            {draws}번 뽑음
           </span>
         )}
       </div>
@@ -284,17 +276,15 @@ export function PickView() {
             signatureMenu={signatureMenu}
             reservationUrl={reservationUrl}
             meal={meal}
+            repeated={repeated}
             onAccept={() => void accept()}
           />
         )}
 
         {showResult && emptyPool && (
           <Empty
-            // 뽑아 본 게 있으면서 비었다면, 없는 게 아니라 다 본 것이다.
-            exhausted={seen.length}
             hasFilters={categories.length > 0 || maxPrice !== null}
             radius={radius}
-            onRestart={restart}
             onWiden={() => {
               const next = RADIUS_OPTIONS.find((m) => m > radius);
               if (next) setRadius(next);
@@ -402,12 +392,15 @@ function Result({
   signatureMenu,
   reservationUrl,
   meal,
+  repeated,
   onAccept,
 }: {
   restaurant: NearbyRestaurant;
   signatureMenu: string | null;
   reservationUrl: string | null;
   meal: MealType;
+  /** 직전과 같은 곳이 또 나왔는지 */
+  repeated: boolean;
   onAccept: () => void;
 }) {
   // 태그를 안 달아도 점심·저녁은 갈린다 — 가격대가 기본 축이다 (pick_restaurant
@@ -428,6 +421,13 @@ function Result({
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-brand-600 p-4">
       <div className="flex flex-col gap-1">
+        {/* 매번 전체에서 새로 뽑으니 같은 곳이 또 나올 수 있다. 그 자체는
+            정상인데, 아무 말이 없으면 [다시 뽑기] 가 안 먹은 줄로 읽힌다. */}
+        {repeated && (
+          <p className="text-caption text-muted-foreground">
+            같은 곳이 또 나왔어요. 근처 후보가 적으면 그럴 수 있어요
+          </p>
+        )}
         <span className="text-display">{r.name}</span>
         {/* 대표메뉴 (SPEC §4.2 결과 카드). 없으면 줄 자체를 안 그린다 */}
         {signatureMenu && (
@@ -518,16 +518,11 @@ function Empty({
   radius,
   onWiden,
   canWiden,
-  exhausted,
-  onRestart,
 }: {
   hasFilters: boolean;
   radius: number;
   onWiden: () => void;
   canWiden: boolean;
-  /** 이번 세션에서 뽑아 본 곳 수. 0보다 크면 "없는" 게 아니라 "다 본" 것이다 */
-  exhausted: number;
-  onRestart: () => void;
 }) {
   return (
     <div
@@ -535,27 +530,16 @@ function Empty({
       className="flex flex-col items-center gap-3 rounded-lg border border-border p-6 text-center"
     >
       <p className="text-body">
-        {exhausted > 0
-          ? `근처에서 뽑을 수 있는 ${exhausted}곳을 다 봤어요`
-          : hasFilters
-            ? "이 조건에 맞는 곳이 없어요"
-            : `반경 ${radius}m 안에 뽑을 곳이 없어요`}
+        {hasFilters
+          ? "이 조건에 맞는 곳이 없어요"
+          : `반경 ${radius}m 안에 뽑을 곳이 없어요`}
       </p>
-
-      {exhausted > 0 && (
-        // 다 봤을 때 제일 하고 싶은 건 "그래도 하나 골라줘" 다. 그걸 먼저 둔다.
-        <Button onClick={onRestart}>처음부터 다시 뽑기</Button>
-      )}
-
       {canWiden ? (
         <Button variant="outline" onClick={onWiden}>
           반경 넓히기
         </Button>
       ) : (
-        <Link
-          href="/restaurants/new"
-          className={buttonClass({ variant: exhausted > 0 ? "outline" : "primary" })}
-        >
+        <Link href="/restaurants/new" className={buttonClass()}>
           맛집 등록하기
         </Link>
       )}

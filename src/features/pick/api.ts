@@ -18,9 +18,15 @@ export type PickParams = {
   maxPrice?: number | null;
   /** 최근 며칠 안에 간 곳을 뺄지. 0이면 제외하지 않는다 */
   excludeDays: number;
-  /** 세션 안에서 이미 뽑힌 것들. [다시 뽑기] 가 같은 곳을 주지 않게 한다 */
-  excludeIds?: readonly string[];
 };
+
+// **세션 안에서 이미 뽑힌 곳을 빼는 기능은 없앴다** (2026-08-10, 사용자 결정).
+// 예전에는 `excludeIds` 를 모아 넘겨서 [다시 뽑기] 가 같은 곳을 안 주게 했는데,
+// 사내 맛집은 한 동네에 몇 곳뿐이라 두세 번이면 후보가 바닥났다. 이제 매번
+// 전체에서 새로 뽑는다 — 같은 곳이 또 나올 수 있고, 그건 정상이다.
+//
+// DB 함수의 `p_exclude_ids` 파라미터는 그대로 둔다. 마이그레이션은 덧붙이기만
+// 하는 것이고, 기본값이 null 이라 안 넘기면 없는 것과 같다.
 
 export type PickResult = {
   restaurant: NearbyRestaurant | null;
@@ -108,7 +114,6 @@ export async function pickRestaurant(p: PickParams): Promise<PickResult> {
     p_categories: p.categories?.length ? [...p.categories] : null,
     p_max_price: p.maxPrice ?? null,
     p_exclude_days: p.excludeDays,
-    p_exclude_ids: p.excludeIds?.length ? [...p.excludeIds] : null,
   });
   if (error) throw error;
 
