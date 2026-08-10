@@ -9,6 +9,7 @@ import { CategoryChip } from "@/components/category-chip";
 import { Distance } from "@/components/distance";
 import {
   categoryError,
+  matchCategory,
   normalizeCategory,
   CATEGORY_MAX_LEN,
   type Category,
@@ -250,6 +251,16 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
                     setPicked(p);
                     setManualName(p.name);
                     setPinned(null);
+                    // **네이버가 준 분류로 종류를 미리 골라 둔다.** 어차피 다음
+                    // 단계에서 물어볼 값이고, 열에 아홉은 맞는다. 직접 입력 칸이
+                    // 열려 있으면 건드리지 않는다 — 사용자가 이미 답한 것이다.
+                    if (!customOpen) {
+                      const guess = matchCategory(
+                        p.category,
+                        categoryList.data ?? [],
+                      );
+                      if (guess) setCategory(guess);
+                    }
                   }}
                   className={`flex w-full flex-col gap-0.5 rounded-lg border p-3 text-left ${
                     picked?.name === p.name && picked.lat === p.lat
@@ -362,10 +373,68 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
         )}
       </div>
 
+      {/* **네이버에서 딸려 온 것들.** 주소·전화·플레이스 링크는 사용자가 다시 칠
+          일이 없는데도 지금까지 화면에 안 보였다. 저장은 되고 있었으니 보여
+          주기만 하면 된다 — 안 보이면 "전화번호는 어디서 넣지" 를 계속 묻게 된다.
+          고칠 칸을 만들지는 않는다. 네이버가 준 값을 손으로 덧쓰기 시작하면
+          다음에 다시 불러왔을 때 무엇이 맞는지 알 수 없다. */}
+      {picked && (
+        <section className="flex flex-col gap-1 rounded-lg border border-border p-3">
+          <p className="text-label font-medium">네이버에서 가져온 정보</p>
+          <dl className="flex flex-col gap-0.5 text-caption text-muted-foreground">
+            {(picked.roadAddress || picked.address) && (
+              <div className="flex gap-2">
+                <dt className="shrink-0">주소</dt>
+                <dd className="min-w-0">
+                  {picked.roadAddress || picked.address}
+                </dd>
+              </div>
+            )}
+            {picked.telephone && (
+              <div className="flex gap-2">
+                <dt className="shrink-0">전화</dt>
+                <dd className="tnum min-w-0">{picked.telephone}</dd>
+              </div>
+            )}
+            {picked.category && (
+              <div className="flex gap-2">
+                <dt className="shrink-0">분류</dt>
+                <dd className="min-w-0">{picked.category}</dd>
+              </div>
+            )}
+            {picked.link && (
+              <div className="flex gap-2">
+                <dt className="shrink-0">링크</dt>
+                <dd className="min-w-0">
+                  <a
+                    href={picked.link}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="break-all text-brand-700 underline underline-offset-2"
+                  >
+                    네이버 플레이스
+                  </a>
+                </dd>
+              </div>
+            )}
+          </dl>
+          <p className="text-caption text-muted-foreground">
+            이대로 함께 저장돼요
+          </p>
+        </section>
+      )}
+
       <fieldset className="flex flex-col gap-2">
         <legend className="text-label font-medium">
           카테고리 <span className="text-danger">*</span>
         </legend>
+        {/* 미리 골라 둔 것이 왜 눌려 있는지 밝힌다. 안 적으면 "내가 눌렀나?" 가
+            되고, 틀렸을 때 고쳐도 되는지 알 수 없다. */}
+        {picked?.category && category !== null && !customOpen && (
+          <p className="text-caption text-muted-foreground">
+            네이버 분류를 보고 골라 뒀어요. 다르면 바꿔 주세요
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           {(categoryList.data ?? []).map((c) => (
             <CategoryChip

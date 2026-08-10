@@ -32,9 +32,22 @@ type MapViewState = {
   radius: number;
   /** 선택된 맛집. 2.3 에서 마커 클릭이 채운다 */
   selectedId: string | null;
+  /**
+   * "카메라를 여기로 옮겨라" 는 **명령**이다. 상태가 아니라 한 번 쓰고 버린다.
+   *
+   * 카메라를 실제로 움직이는 건 `MapPanel` 하나뿐인데(지도 인스턴스가 하나라
+   * 그래야 한다), 옮기라고 말하고 싶은 쪽은 지도 밖에 있다 — 오른쪽 위
+   * [내 위치] 버튼이 그렇다. 그래서 명령만 여기 두고 실행은 MapPanel 이 한다.
+   *
+   * `nonce` 가 있는 이유: 같은 자리로 두 번 눌러도 통해야 한다. 좌표만 보면
+   * 두 번째 클릭이 "값이 안 변했다" 로 묻힌다.
+   */
+  flyTo: (LatLng & { nonce: number }) | null;
   setView: (center: LatLng, zoom: number, bounds: Bounds | null) => void;
   setRadius: (radius: number) => void;
   setSelectedId: (selectedId: string | null) => void;
+  requestFlyTo: (to: LatLng) => void;
+  clearFlyTo: () => void;
 };
 
 export const useMapView = create<MapViewState>()(
@@ -45,16 +58,23 @@ export const useMapView = create<MapViewState>()(
       bounds: null,
       radius: DEFAULT_RADIUS,
       selectedId: null,
+      flyTo: null,
       // bounds 를 못 읽었으면 예전 값을 지우지 않는다. 지우면 조회가 멈춘다.
       setView: (center, zoom, bounds) =>
         set(bounds ? { center, zoom, bounds } : { center, zoom }),
       setRadius: (radius) => set({ radius }),
       setSelectedId: (selectedId) => set({ selectedId }),
+      requestFlyTo: (to) =>
+        set((s) => ({ flyTo: { ...to, nonce: (s.flyTo?.nonce ?? 0) + 1 } })),
+      clearFlyTo: () => set({ flyTo: null }),
     }),
     {
       name: "hannuri-matzip:map-view",
       // 탭을 닫으면 잊는다. 모달 URL 을 새로고침해도 같은 탭이면 뷰가 살아남는다.
       storage: createJSONStorage(() => sessionStorage),
+      // **flyTo 는 저장하지 않는다.** 명령이라 되살아나면 안 된다 — 새로고침
+      // 했더니 지도가 저 혼자 움직이는 꼴이 된다.
+      partialize: ({ flyTo: _flyTo, ...rest }) => rest,
       // 서버 렌더 결과와 어긋나지 않게 자동 복원을 끄고, 마운트 후 직접 rehydrate 한다.
       // 안 그러면 첫 페인트에서 radius 가 달라져 hydration 경고가 난다.
       skipHydration: true,

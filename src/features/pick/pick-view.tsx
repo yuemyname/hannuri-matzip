@@ -39,9 +39,25 @@ const MEALS: { key: MealType; label: string }[] = [
 
 export function PickView() {
   const router = useRouter();
-  const { center } = useCurrentPosition();
+  const { center: geoCenter, status } = useCurrentPosition();
+  const mapCenter = useMapView((s) => s.center);
   const radiusFromMap = useMapView((s) => s.radius);
   const setSelectedId = useMapView((s) => s.setSelectedId);
+
+  /**
+   * 뽑는 기준점 — **지금 보고 있는 지도 한가운데다** (2026-08-10 수정).
+   *
+   * 예전에는 `useCurrentPosition().center` 만 봤다. 그 값은 GPS 를 못 얻으면
+   * 조용히 사무실 좌표로 떨어지는데, 그래서 을지로3가를 보면서 뽑았더니 구의역
+   * 식당이 나왔다 — 화면과 아무 상관 없는 자리에서 고르고 있었던 것이다.
+   *
+   * 지도 한가운데를 쓰면 사용자가 기준을 직접 옮길 수 있다 (지도를 끌면 된다).
+   * 지도가 아직 없으면(풀페이지 fallback) 예전처럼 내 위치 → 사무실 순이다.
+   * **어디를 기준으로 삼았는지는 화면에 적는다** — 이 버그의 핵심은 결과가
+   * 틀린 게 아니라 어디 기준인지 알 방법이 없었다는 것이다.
+   */
+  const center = mapCenter ?? geoCenter;
+  const usingMap = mapCenter !== null;
 
   // 시간대 기반 기본값 (SPEC §4.2). 서버 렌더와 어긋나지 않게 마운트 후에 정한다.
   const [meal, setMeal] = useState<MealType>("lunch");
@@ -109,6 +125,17 @@ export function PickView() {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* **어디를 기준으로 뽑는지 먼저 적는다.** 예전엔 이 줄이 없어서, GPS 를
+          못 얻어 사무실 좌표로 떨어졌을 때 왜 엉뚱한 동네가 나오는지 알 길이
+          없었다 (을지로에서 뽑았는데 구의역이 나온 게 그 경우다). */}
+      <p className="text-caption text-muted-foreground">
+        {usingMap
+          ? "지금 보고 있는 지도 한가운데를 기준으로 찾아요. 다른 동네를 보려면 지도를 옮겨 주세요"
+          : status === "granted"
+            ? "내 위치를 기준으로 찾아요"
+            : "위치를 못 얻어서 사무실을 기준으로 찾아요"}
+      </p>
+
       <fieldset className="flex flex-col gap-2">
         <legend className="text-label font-medium">언제</legend>
         <div

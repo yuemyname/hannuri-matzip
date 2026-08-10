@@ -44,6 +44,37 @@ export function isCategory(value: unknown): value is Category {
 }
 
 /**
+ * 네이버가 준 분류("음식점>한식>육류,고기요리")에서 **우리 종류**를 찾는다.
+ * 못 찾으면 null — 그때는 사용자가 고른다.
+ *
+ * **후보는 인자로 받는다.** 목록의 정본은 DB 이고 코드에 다시 적지 않는다
+ * (CLAUDE.md). 여기 있는 건 "어떻게 맞춰 볼까" 하는 규칙뿐이라, 나중에 종류가
+ * 늘어도 이 함수는 그대로 동작한다.
+ *
+ * 가장 **긴** 이름을 고른다. 짧은 이름이 긴 이름 안에 들어 있을 때
+ * ("한식" ⊂ "한식뷔페") 짧은 쪽이 먼저 걸리면 더 정확한 답을 놓친다.
+ */
+export function matchCategory(
+  naverCategory: string,
+  known: readonly Category[],
+): Category | null {
+  const haystack = naverCategory.replace(/\s+/g, "");
+  if (haystack.length === 0) return null;
+
+  let best: Category | null = null;
+  for (const c of known) {
+    const needle = c.replace(/\s+/g, "");
+    if (needle.length === 0 || !haystack.includes(needle)) continue;
+    // "음식점" 자체가 종류로 등록돼 있으면 뭐든 다 걸린다. 그건 분류가 아니다.
+    if (needle === "음식점") continue;
+    if (best === null || needle.length > best.replace(/\s+/g, "").length) {
+      best = c;
+    }
+  }
+  return best;
+}
+
+/**
  * 종류별 칩 색.
  *
  * 목록이 열려 버려서 이름마다 색을 손으로 정해 둘 수 없다. 대신 이름을 숫자로

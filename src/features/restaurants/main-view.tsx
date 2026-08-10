@@ -54,15 +54,69 @@ function useFirstRunWelcome() {
 const ACTION =
   "inline-flex w-24 shrink-0 items-center justify-center rounded-chip border border-border bg-background px-3 py-2 text-label shadow-pop hover:bg-muted";
 
+/** 점메추만 색을 채운다. 이 앱에서 제일 자주 누르는 버튼이라 눈에 먼저 걸려야 한다 */
+const ACTION_PRIMARY =
+  "inline-flex w-24 shrink-0 items-center justify-center rounded-chip bg-primary px-3 py-2 text-label font-medium text-primary-foreground shadow-pop hover:bg-brand-700";
+
 const MENU = [
-  { href: "/pick", label: "점메추" },
-  { href: "/bill", label: "밥값 내기" },
-  { href: "/restaurants/new", label: "식당 등록" },
-  { href: "/me", label: "MY" },
+  { href: "/pick", label: "점메추", primary: true },
+  { href: "/bill", label: "밥값 내기", primary: false },
+  { href: "/restaurants/new", label: "식당 등록", primary: false },
+  { href: "/me", label: "MY", primary: false },
 ] as const;
 
+type Position = ReturnType<typeof useCurrentPosition>;
+
 /**
- * 지도 오른쪽 위 액션 버튼 — 평소엔 [+] 하나, 누르면 셋이 펼쳐진다.
+ * [내 위치] — 지도를 내 위치로 되돌린다.
+ *
+ * 위치를 아직 못 얻었으면 먼저 물어보고, 허용되는 순간 그리로 옮긴다.
+ * 그래서 "권한 요청" 과 "지도 이동" 이 한 버튼에 들어간다 — 사용자에게는 둘 다
+ * "내 위치로 가고 싶다" 는 같은 뜻이라, 버튼을 나누면 두 번 눌러야 한다.
+ *
+ * 거절당했으면 눌러도 소용이 없다. 그때는 지도 아래 말풍선이 기기별로 어디를
+ * 고쳐야 하는지 알려 준다 — 여기서 같은 말을 또 하지 않는다.
+ */
+function LocateButton({ position }: { position: Position }) {
+  const { coords, status, request } = position;
+  const requestFlyTo = useMapView((s) => s.requestFlyTo);
+  // "허용되면 옮겨라". 버튼을 눌러서 켜졌을 때만 산다 — 앱이 알아서 위치를
+  // 얻는 경우(이미 허용된 브라우저)에 지도가 저 혼자 움직이면 안 된다.
+  const armed = useRef(false);
+
+  useEffect(() => {
+    if (!armed.current || !coords) return;
+    armed.current = false;
+    requestFlyTo({ lat: coords.lat, lng: coords.lng });
+  }, [coords, requestFlyTo]);
+
+  const go = () => {
+    if (coords) {
+      requestFlyTo({ lat: coords.lat, lng: coords.lng });
+      return;
+    }
+    armed.current = true;
+    request();
+  };
+
+  return (
+    <button
+      type="button"
+      // 기호뿐이라 이름을 따로 준다. 상태는 색이 아니라 이름으로 알린다.
+      aria-label={
+        status === "prompting" ? "위치 확인 중" : "내 위치로 지도 옮기기"
+      }
+      aria-busy={status === "prompting"}
+      onClick={go}
+      className="pointer-events-auto inline-flex size-12 items-center justify-center rounded-chip border border-border bg-background text-title leading-none text-brand-700 shadow-pop hover:bg-muted"
+    >
+      <span aria-hidden="true">◎</span>
+    </button>
+  );
+}
+
+/**
+ * 지도 오른쪽 위 액션 버튼 — 평소엔 [내 위치]·[+] 둘, [+] 를 누르면 넷이 펼쳐진다.
  *
  * 메뉴(`role="menu"`)가 아니라 **접었다 펴는 링크 묶음**이다. 세 항목이 전부
  * "다른 화면으로 간다" 라서 명령이 아니라 이동이고, 그래서 그냥 `a` 로 둔다 —
@@ -70,7 +124,7 @@ const MENU = [
  *
  * 그래서 Esc·바깥 클릭은 직접 처리한다. 여는 장치가 하나뿐이라 이 정도면 된다.
  */
-function MapActions() {
+function MapActions({ position }: { position: Position }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -103,18 +157,25 @@ function MapActions() {
       ref={rootRef}
       className="pointer-events-none absolute top-3 right-3 z-[var(--z-filterbar)] flex flex-col items-end gap-2"
     >
-      <button
-        ref={toggleRef}
-        type="button"
-        aria-expanded={open}
-        aria-controls="map-actions"
-        // 글자가 기호라 이름을 따로 준다. "+" 만으로는 무엇이 열리는지 모른다.
-        aria-label={open ? "메뉴 닫기" : "메뉴 열기"}
-        onClick={() => setOpen((v) => !v)}
-        className="pointer-events-auto inline-flex size-12 items-center justify-center rounded-chip bg-primary text-title leading-none font-medium text-primary-foreground shadow-pop hover:bg-brand-700"
-      >
-        <span aria-hidden="true">{open ? "✕" : "+"}</span>
-      </button>
+      {/* [내 위치] 는 [+] 왼쪽에 **항상** 떠 있다. 예전에는 지도 아래 말풍선의
+          [내 주변 찾기] 뿐이었는데, 그건 위치를 한 번 얻으면 사라져서 그 뒤로는
+          지도를 되돌릴 방법이 없었다. 지도를 끌고 다니다 원래 자리로 오는 건
+          한 번이 아니라 계속 하는 일이다. */}
+      <div className="flex items-center gap-2">
+        <LocateButton position={position} />
+        <button
+          ref={toggleRef}
+          type="button"
+          aria-expanded={open}
+          aria-controls="map-actions"
+          // 글자가 기호라 이름을 따로 준다. "+" 만으로는 무엇이 열리는지 모른다.
+          aria-label={open ? "메뉴 닫기" : "메뉴 열기"}
+          onClick={() => setOpen((v) => !v)}
+          className="pointer-events-auto inline-flex size-12 items-center justify-center rounded-chip bg-primary text-title leading-none font-medium text-primary-foreground shadow-pop hover:bg-brand-700"
+        >
+          <span aria-hidden="true">{open ? "✕" : "+"}</span>
+        </button>
+      </div>
 
       {/* 접혀 있을 때는 DOM 에서 아예 뺀다. `hidden` 으로 두면 Tab 이 안 보이는
           링크를 지나간다 — 눈에는 안 보이는데 포커스만 사라진 것처럼 보인다. */}
@@ -129,7 +190,7 @@ function MapActions() {
               key={m.href}
               href={m.href}
               onClick={() => setOpen(false)}
-              className={`${ACTION} pointer-events-auto`}
+              className={`${m.primary ? ACTION_PRIMARY : ACTION} pointer-events-auto`}
             >
               {m.label}
             </Link>
@@ -248,7 +309,7 @@ export function MainView() {
 
       {/* 오른쪽 위 = 무엇을 할지. 아래(필터·카드)와 층을 나눈다.
           평소에는 [+] 하나만 떠 있어서 지도를 거의 안 가린다. */}
-      <MapActions />
+      <MapActions position={position} />
 
       {/* 지도 아래에 뜨는 것들. 아래에서부터 컨트롤 → 고른 곳 카드 순으로 쌓인다.
           여기도 감싸는 층은 포인터 이벤트를 안 받는다. */}

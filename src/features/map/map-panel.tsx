@@ -43,6 +43,8 @@ export function MapPanel({
   const zoom = useMapView((s) => s.zoom);
   const setView = useMapView((s) => s.setView);
   const bounds = useMapView((s) => s.bounds);
+  const flyTo = useMapView((s) => s.flyTo);
+  const clearFlyTo = useMapView((s) => s.clearFlyTo);
 
   // 겹친 것을 숫자 원으로 합친다. 격자 칸 수가 곧 핀 상한이라, 아무것도 버리지
   // 않으면서 한 화면에 뜨는 핀 개수가 고정된다 (cluster.ts).
@@ -98,6 +100,14 @@ export function MapPanel({
     },
     [zoom],
   );
+
+  // 지도 밖(오른쪽 위 [내 위치] 버튼)에서 온 카메라 명령. 핀 타깃과 같은 꼴이다 —
+  // 한 번 옮기고 곧바로 비운다. 안 비우면 다음 렌더에서 또 옮겨서 지도가 붙잡힌다.
+  useEffect(() => {
+    if (!flyTo) return;
+    setFocus({ lat: flyTo.lat, lng: flyTo.lng });
+    clearFlyTo();
+  }, [flyTo, clearFlyTo]);
 
   // 등록의 핀 단계로 들어오면 검색한 가게 좌표로 한 번 옮긴다.
   // **안 옮기면 핀이 내가 보던 자리에 찍힌다** — 그러면 미세조정이 아니라
