@@ -113,12 +113,30 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
 
   const search = usePlaceSearch(debounced, areas);
 
+  // 검색 결과 상자의 높이를 붙잡아 두기 위한 것 (아래 JSX 주석 참고).
+  // 재는 건 **결과가 떠 있는 동안**이고, 쓰는 건 다음 검색이 도는 동안이다.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [heldHeight, setHeldHeight] = useState(0);
+  const holding = search.isFetching && heldHeight > 0;
+
   // 지역명을 붙여도 먼 데가 섞여 온다 (체인점은 상호에 지역이 안 붙는다).
   // 가까운 순으로 세워 두면 눈으로 고르기 쉽다.
   const places = useMemo(() => {
     const list = search.data?.places ?? [];
     return [...list].sort((a, b) => distanceM(here, a) - distanceM(here, b));
   }, [search.data, here]);
+
+  // 검색이 끝난 상태의 높이만 기억한다. 도는 동안 재면 방금 비운 높이를 붙잡아
+  // 두게 되어 아무 소용이 없다.
+  //
+  // `useLayoutEffect` 가 아니라 `useEffect` 인 이유: 이 값은 **다음** 검색에서
+  // 쓰인다. 같은 프레임에 반영될 필요가 없고, 풀페이지 fallback 은 서버에서도
+  // 렌더되므로 layout 훅은 경고를 낸다.
+  useEffect(() => {
+    if (search.isFetching) return;
+    const el = listRef.current;
+    if (el) setHeldHeight(el.offsetHeight);
+  }, [places, search.isFetching, search.data]);
 
   // 핀 단계에 들어가고 나갈 때만 배경 지도에 신호를 준다.
   // 모달이 언마운트될 때 반드시 꺼야 한다 — 안 그러면 메인에 핀이 남는다.
@@ -230,6 +248,18 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
           />
         </label>
 
+        {/* **검색 중에도 이 상자의 높이를 유지한다.**
+            결과가 사라지면 상자가 납작해지는데, 모달이 내용 높이를 따라가는
+            하단 시트라 그게 곧 시트 전체가 내려앉았다 올라오는 것으로 보였다.
+            글자를 읽던 눈이 매번 따라 움직여야 해서 어지럽다.
+            **리스트는 그대로 지운다** — 지난 결과를 남겨 두면 새 검색어에 대한
+            답인 줄 알고 누르게 된다. 비우되 자리는 지키는 게 맞다. */}
+        <div
+          ref={listRef}
+          // 토큰이 아니라 방금 잰 값이다. 디자인 결정이 아니라 데이터라서 여기 있다.
+          style={holding ? { minHeight: heldHeight } : undefined}
+          className="flex flex-col gap-2"
+        >
         {search.isFetching && (
           <p className="text-caption text-muted-foreground">찾는 중</p>
         )}
@@ -297,6 +327,7 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
               검색 결과가 없어요. 이름을 그대로 쓰고 위치는 직접 잡으면 돼요
             </p>
           )}
+        </div>
 
         <div className="flex items-center gap-2">
           <Button
