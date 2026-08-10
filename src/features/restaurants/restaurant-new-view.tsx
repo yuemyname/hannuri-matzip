@@ -9,6 +9,7 @@ import { CategoryChip } from "@/components/category-chip";
 import { Distance } from "@/components/distance";
 import {
   categoryError,
+  categoryFromNaver,
   matchCategory,
   normalizeCategory,
   CATEGORY_MAX_LEN,
@@ -76,6 +77,11 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
   // 목록에 없는 종류를 직접 적는 칸. 열려 있을 때만 값이 의미를 갖는다.
   const [customOpen, setCustomOpen] = useState(false);
   const [custom, setCustom] = useState("");
+  /**
+   * 직접 입력 칸을 **네이버 분류로 채워 둔 값**. 사용자가 손대면 어긋나므로
+   * 지금 칸에 있는 값과 같을 때만 "네이버가 적어 준 것" 이라고 말한다.
+   */
+  const [autoCustom, setAutoCustom] = useState<string | null>(null);
   const categoryList = useCategories();
   const [priceRange, setPriceRange] = useState<number | null>(null);
   const [memo, setMemo] = useState("");
@@ -289,16 +295,33 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
                     setPicked(p);
                     setManualName(p.name);
                     setPinned(null);
-                    // **네이버가 준 분류로 종류를 미리 골라 둔다.** 어차피 다음
-                    // 단계에서 물어볼 값이고, 열에 아홉은 맞는다. 직접 입력 칸이
-                    // 열려 있으면 건드리지 않는다 — 사용자가 이미 답한 것이다.
-                    if (!customOpen) {
-                      const guess = matchCategory(
-                        p.category,
-                        categoryList.data ?? [],
-                      );
-                      if (guess) setCategory(guess);
+                    // **네이버가 준 분류로 종류를 미리 정해 둔다** (2026-08-10).
+                    // 목록에 있으면 칩을 고르고, 없으면 직접 입력 칸에 새 이름을
+                    // 적어 둔다 — [검색] 화면과 같은 규칙이다. 어차피 다음 단계에서
+                    // 물어볼 값이고, 여기서 정해 두면 그냥 넘기면 된다.
+                    //
+                    // **사용자가 직접 적어 둔 게 있으면 안 건드린다.** 이미 답한
+                    // 것을 덮어쓰면 후보를 바꿔 볼 때마다 다시 쳐야 한다.
+                    if (customOpen && custom.trim().length > 0) return;
+
+                    const matched = matchCategory(
+                      p.category,
+                      categoryList.data ?? [],
+                    );
+                    if (matched !== null) {
+                      setCustomOpen(false);
+                      setAutoCustom(null);
+                      setCategory(matched);
+                      return;
                     }
+                    // 목록에 없는 분류. 새 이름을 뽑을 수 있으면 적어 둔다.
+                    // 못 뽑으면(먹는 것이 아니거나 이름 규칙에 안 맞으면) 그대로
+                    // 두고 3단계에서 고르게 한다.
+                    const derived = categoryFromNaver(p.category);
+                    if (derived === null) return;
+                    setCustomOpen(true);
+                    setCustom(derived);
+                    setAutoCustom(derived);
                   }}
                   // **네이버에서 온 결과는 초록 테두리** (2026-08-10).
                   // 고른 줄만 브랜드색으로 바뀐다 — 초록은 "어디서 왔나",
@@ -470,11 +493,16 @@ export function RestaurantNewView({ canPin }: { canPin: boolean }) {
         <legend className="text-label font-medium">
           카테고리 <span className="text-danger">*</span>
         </legend>
-        {/* 미리 골라 둔 것이 왜 눌려 있는지 밝힌다. 안 적으면 "내가 눌렀나?" 가
+        {/* 미리 정해 둔 것이 왜 그렇게 돼 있는지 밝힌다. 안 적으면 "내가 눌렀나?" 가
             되고, 틀렸을 때 고쳐도 되는지 알 수 없다. */}
         {picked?.category && category !== null && !customOpen && (
           <p className="text-caption text-muted-foreground">
             네이버 분류를 보고 골라 뒀어요. 다르면 바꿔 주세요
+          </p>
+        )}
+        {picked?.category && customOpen && autoCustom !== null && custom === autoCustom && (
+          <p className="text-caption text-muted-foreground">
+            목록에 없는 분류라 네이버 분류로 새 종류를 적어 뒀어요. 다르면 바꿔 주세요
           </p>
         )}
         <div className="flex flex-wrap gap-2">
