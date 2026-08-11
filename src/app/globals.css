@@ -57,6 +57,19 @@
   --color-warning: #B4700F;
   --color-danger:  #A81B1B; /* 브랜드 오렌지와 헷갈리므로 항상 텍스트 라벨 병기 */
 
+  /* 점메추 룰렛 칸 — 위 카테고리 색의 **밝은 형제**.
+     칩은 흰 글자를 얹어야 해서 어두운 쪽으로 잡았는데, 그 일곱 개를 한 판에
+     모아 놓으면 탁한 파이가 된다. 판에서는 글자를 어두운 잉크로 쓰고 칸을
+     밝게 칠한다 — 색상 계열이 같아서 "이 색이 그 종류" 는 그대로 읽힌다.
+     전부 --foreground(#2B2725) 대비 4.5:1 이상이다. */
+  --color-cat-korean-vivid:   #F4633D; /* 4.7:1 */
+  --color-cat-chinese-vivid:  #F0A81E; /* 7.3:1 */
+  --color-cat-japanese-vivid: #35AED6; /* 5.8:1 */
+  --color-cat-western-vivid:  #AE8BF0; /* 5.5:1 */
+  --color-cat-snack-vivid:    #33CE89; /* 7.3:1 */
+  --color-cat-cafe-vivid:     #D89A5B; /* 6.1:1 */
+  --color-cat-etc-vivid:      #ADA49B; /* 6.0:1 */
+
   /* Category chip — 7종 (SPEC §2.1 category) */
   --color-cat-korean:  #C93A18;
   --color-cat-chinese: #B4700F;

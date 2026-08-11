@@ -162,18 +162,23 @@ const PINNED: Record<string, (typeof PALETTE)[number]> = {
 };
 
 /**
- * 칠할 색을 CSS 변수 이름으로. **클래스로 못 쓰는 곳** 이 있어서 함께 둔다 —
- * 점메추 룰렛은 `conic-gradient` 한 줄로 칸을 그리는데, 거기엔 클래스를 못 넣는다.
- * 값을 직접 적으면 토큰 정본이 두 군데가 되므로 변수 이름만 넘긴다.
+ * 점메추 룰렛 칸 색을 **CSS 변수 이름으로** 돌려준다.
+ *
+ * 캔버스는 클래스를 못 받는다. 값을 직접 적으면 토큰 정본이 두 군데가 되므로
+ * 변수 이름만 넘기고, 값은 화면에서 `readToken()` 이 읽는다.
+ *
+ * **칩보다 밝은 형제 색이다.** 칩은 흰 글자를 얹어야 해서 어두운 쪽으로
+ * 잡았는데, 그 일곱을 한 판에 모으면 탁한 파이가 된다. 판에서는 글자를 어두운
+ * 잉크로 쓰고 칸을 밝게 칠한다 — 색상 계열이 같아 "이 색이 그 종류" 는 그대로다.
  */
 const PALETTE_VAR = [
-  "--color-cat-korean",
-  "--color-cat-chinese",
-  "--color-cat-japanese",
-  "--color-cat-western",
-  "--color-cat-snack",
-  "--color-cat-cafe",
-  "--color-cat-etc",
+  "--color-cat-korean-vivid",
+  "--color-cat-chinese-vivid",
+  "--color-cat-japanese-vivid",
+  "--color-cat-western-vivid",
+  "--color-cat-snack-vivid",
+  "--color-cat-cafe-vivid",
+  "--color-cat-etc-vivid",
 ] as const;
 
 /** 어느 칸을 쓸지. 클래스와 변수가 **같은 칸**을 가리키도록 한 곳에서 정한다 */
@@ -190,6 +195,6 @@ export function categoryColorClass(name: Category): string {
   return PALETTE[paletteIndex(name)];
 }
 
-export function categoryColorVar(name: Category): string {
+export function categoryWheelVar(name: Category): string {
   return PALETTE_VAR[paletteIndex(name)];
 }

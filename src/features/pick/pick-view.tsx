@@ -11,7 +11,7 @@ import { favoredAt } from "@/lib/moods";
 import { reservationUrlError } from "@/lib/reservation";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
-import { categoryColorVar, type Category } from "@/lib/categories";
+import { categoryWheelVar, type Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
 import { OFFICE, RADIUS_OPTIONS, readToken } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
@@ -482,6 +482,12 @@ function useReducedMotion() {
  * 이름을 부챗살 방향으로 박으면 그제야 "돌아가는 판" 이 된다 — 그건 CSS 로는
  * 못 하고 캔버스가 필요하다.
  *
+ * **회전도 캔버스 안에서 한다.** 캔버스 요소에 CSS `transform` 을 걸어 돌리면
+ * 크로미움에서는 도는데 실기기(iOS Safari)에서는 안 돌았다 — 캔버스가 따로 합성
+ * 레이어로 올라가면 변환이 화면에 안 나타나는 경우가 있다. 매 프레임 다시 그리면
+ * 그 문제가 아예 없다. 칸 일곱에 글자 일곱을 2.6초 동안 다시 그리는 값이라
+ * 비용도 문제가 안 된다.
+ *
  * 색·글꼴은 **토큰에서 읽어 온다** (`readToken`). 캔버스는 CSS 를 모르니 값을
  * 넘겨야 하는데, 여기에 hex 나 px 를 적으면 토큰 정본이 두 군데가 된다.
  *
@@ -506,6 +512,8 @@ function Roulette({
 }) {
   const discRef = useRef<HTMLCanvasElement>(null);
   const angle = useRef(0);
+  /** 지금 각도로 판을 다시 그린다. 색·글꼴을 한 번 읽어 둔 뒤 채워진다 */
+  const drawRef = useRef<(deg: number) => void>(() => {});
   /** 감속 구간. null 이면 등속으로 도는 중이다 */
   const landing = useRef<{ from: number; to: number; start: number } | null>(
     null,
@@ -544,17 +552,17 @@ function Roulette({
       } else {
         angle.current += (dt / 1000) * FREE_SPIN_DPS;
       }
-      if (discRef.current) {
-        discRef.current.style.transform = `rotate(${angle.current}deg)`;
-      }
+      drawRef.current(angle.current);
       raf = requestAnimationFrame(paint);
     };
     raf = requestAnimationFrame(paint);
     return () => cancelAnimationFrame(raf);
   }, [n, reduce]);
 
-  // 칸을 그린다. 판이 도는 것은 CSS transform 이고, 그림 자체는 안 바뀐다 —
-  // 매 프레임 다시 그리면 글자가 계속 재래스터되어 흐려지고 배터리도 먹는다.
+  /**
+   * 칸을 그리는 함수를 만들어 둔다. 색·글꼴은 한 번만 읽고, 프레임마다 하는 일은
+   * 지우고 돌려서 다시 그리는 것뿐이다.
+   */
   useEffect(() => {
     const cv = discRef.current;
     if (!cv || n < 2) return;
@@ -566,70 +574,81 @@ function Roulette({
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     cv.width = Math.round(size * dpr);
     cv.height = Math.round(size * dpr);
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, size, size);
 
     const c = size / 2;
     const arc = (2 * Math.PI) / n;
     const rim = readToken("--border");
-    const ink = readToken("--primary-foreground");
+    // **칸이 밝아졌으니 글자는 어두운 잉크다** (globals.css 의 *-vivid 참고)
+    const ink = readToken("--foreground");
+    const hub = readToken("--background");
+    const fills = labels.map((x) => readToken(categoryWheelVar(x)));
 
-    for (let i = 0; i < n; i++) {
-      const fill = readToken(categoryColorVar(labels[i]));
-      if (!fill) continue;
-      g.beginPath();
-      g.fillStyle = fill;
-      g.moveTo(c, c);
-      // 12시에서 시작해 시계방향. 바늘이 12시라 칸 번호와 각도가 그대로 맞는다.
-      g.arc(c, c, c - 1, arc * i - Math.PI / 2, arc * (i + 1) - Math.PI / 2);
-      g.fill();
-    }
-
-    // 칸 이름을 부챗살 방향으로 박는다. 이게 없으면 색 조각만 도는 것으로 보인다.
     const rootPx = parseFloat(
       getComputedStyle(document.documentElement).fontSize,
     );
     const rem = parseFloat(readToken("--text-label") ?? "");
     const family = readToken("--font-sans") ?? "";
-    if (Number.isFinite(rem) && Number.isFinite(rootPx) && ink) {
-      // 칸이 많아질수록 글자를 줄인다. 안 줄이면 이웃 칸 글자와 겹친다.
-      const px = rem * rootPx * (n > 9 ? 0.86 : 1);
-      g.font = `600 ${px}px ${family}`;
-      g.fillStyle = ink;
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      for (let i = 0; i < n; i++) {
-        const a = arc * i + arc / 2 - Math.PI / 2;
-        const r = c * 0.62; // 테두리와 가운데 사이. 이름이 가장 잘 놓이는 자리
-        // **여기서 위아래를 따로 뒤집지 않는다.** 판이 통째로 도는 그림이라,
-        // 판 좌표에서 내린 판단은 돌아간 뒤엔 틀린다. 이 각도로 그려 두면
-        // **바늘에 선 칸은 언제나 화면에서 똑바로 선다** — 착지 회전량이
-        // 정확히 이 각도를 상쇄하기 때문이다. 나머지 칸이 기울어 보이는 건
-        // 진짜 룰렛판과 같은 모습이고, 읽어야 할 것은 선 칸 하나뿐이다.
-        g.save();
-        g.translate(c + Math.cos(a) * r, c + Math.sin(a) * r);
-        g.rotate(a + Math.PI / 2);
-        g.fillText(labels[i], 0, 0, c * 0.72);
-        g.restore();
-      }
-    }
+    // 칸이 많아질수록 글자를 줄인다. 안 줄이면 이웃 칸 글자와 겹친다.
+    const px = rem * rootPx * (n > 9 ? 0.86 : 1);
+    const canLabel = Number.isFinite(px) && ink !== undefined;
 
-    // 테두리와 가운데 축. 축이 있어야 "돌아가는 판" 으로 읽힌다.
-    if (rim) {
-      g.strokeStyle = rim;
-      g.lineWidth = 1;
-      g.beginPath();
-      g.arc(c, c, c - 1, 0, Math.PI * 2);
-      g.stroke();
-    }
-    const hub = readToken("--background");
-    if (hub) {
-      g.fillStyle = hub;
-      g.beginPath();
-      g.arc(c, c, size * 0.055, 0, Math.PI * 2);
-      g.fill();
-      if (rim) g.stroke();
-    }
+    drawRef.current = (deg: number) => {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, size, size);
+      g.translate(c, c);
+      g.rotate((deg * Math.PI) / 180);
+      g.translate(-c, -c);
+
+      for (let i = 0; i < n; i++) {
+        const fill = fills[i];
+        if (!fill) continue;
+        g.beginPath();
+        g.fillStyle = fill;
+        g.moveTo(c, c);
+        // 12시에서 시작해 시계방향. 바늘이 12시라 칸 번호와 각도가 그대로 맞는다.
+        g.arc(c, c, c - 1, arc * i - Math.PI / 2, arc * (i + 1) - Math.PI / 2);
+        g.fill();
+      }
+
+      // 칸 이름을 부챗살 방향으로 박는다. 없으면 색 조각만 도는 것으로 보인다.
+      if (canLabel) {
+        g.font = `600 ${px}px ${family}`;
+        g.fillStyle = ink!;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        for (let i = 0; i < n; i++) {
+          const a = arc * i + arc / 2 - Math.PI / 2;
+          const r = c * 0.62; // 테두리와 가운데 사이. 이름이 가장 잘 놓이는 자리
+          // **위아래를 따로 뒤집지 않는다.** 판이 통째로 도는 그림이라 판
+          // 좌표에서 내린 판단은 돌아간 뒤엔 틀린다. 이대로 두면 착지 회전량이
+          // 정확히 이 각도를 상쇄해서 **바늘에 선 칸은 언제나 똑바로 선다.**
+          // 나머지가 기울어 보이는 건 진짜 룰렛판과 같은 모습이다.
+          g.save();
+          g.translate(c + Math.cos(a) * r, c + Math.sin(a) * r);
+          g.rotate(a + Math.PI / 2);
+          g.fillText(labels[i], 0, 0, c * 0.72);
+          g.restore();
+        }
+      }
+
+      if (rim) {
+        g.strokeStyle = rim;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.arc(c, c, c - 1, 0, Math.PI * 2);
+        g.stroke();
+      }
+      // 가운데 축. 있어야 "돌아가는 판" 으로 읽힌다 (원이라 돌아도 그대로다)
+      if (hub) {
+        g.fillStyle = hub;
+        g.beginPath();
+        g.arc(c, c, size * 0.055, 0, Math.PI * 2);
+        g.fill();
+        if (rim) g.stroke();
+      }
+    };
+
+    drawRef.current(angle.current);
   }, [labels, n]);
 
   // 종류가 하나뿐이면 판이 될 수 없다. 그때는 글자만 남긴다 —
