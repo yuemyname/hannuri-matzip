@@ -161,11 +161,35 @@ const PINNED: Record<string, (typeof PALETTE)[number]> = {
   기타: PALETTE[6],
 };
 
-export function categoryColorClass(name: Category): string {
+/**
+ * 칠할 색을 CSS 변수 이름으로. **클래스로 못 쓰는 곳** 이 있어서 함께 둔다 —
+ * 점메추 룰렛은 `conic-gradient` 한 줄로 칸을 그리는데, 거기엔 클래스를 못 넣는다.
+ * 값을 직접 적으면 토큰 정본이 두 군데가 되므로 변수 이름만 넘긴다.
+ */
+const PALETTE_VAR = [
+  "--color-cat-korean",
+  "--color-cat-chinese",
+  "--color-cat-japanese",
+  "--color-cat-western",
+  "--color-cat-snack",
+  "--color-cat-cafe",
+  "--color-cat-etc",
+] as const;
+
+/** 어느 칸을 쓸지. 클래스와 변수가 **같은 칸**을 가리키도록 한 곳에서 정한다 */
+function paletteIndex(name: Category): number {
   const pinned = PINNED[name];
-  if (pinned) return pinned;
+  if (pinned !== undefined) return PALETTE.indexOf(pinned);
   // djb2. 암호용이 아니라 "같은 이름 → 같은 칸" 이면 충분하다.
   let h = 5381;
   for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0;
-  return PALETTE[Math.abs(h) % PALETTE.length];
+  return Math.abs(h) % PALETTE.length;
+}
+
+export function categoryColorClass(name: Category): string {
+  return PALETTE[paletteIndex(name)];
+}
+
+export function categoryColorVar(name: Category): string {
+  return PALETTE_VAR[paletteIndex(name)];
 }

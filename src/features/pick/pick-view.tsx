@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import { favoredAt } from "@/lib/moods";
 import { reservationUrlError } from "@/lib/reservation";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
-import type { Category } from "@/lib/categories";
+import { categoryColorVar, type Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
 import { OFFICE, RADIUS_OPTIONS } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
@@ -25,10 +25,12 @@ import {
   type MealType,
 } from "./api";
 
-// globals.css 의 `--animate-pick-fill` 도 1.2s 다. 한쪽만 고치면 바가 다 차고도
-// 결과가 안 뜨거나, 덜 찬 채로 결과가 뜬다.
+/** 응답을 받은 뒤 룰렛이 멈추기까지. 이 시간 동안 결과를 감춘다 */
 const SHUFFLE_MS = 1200;
-const TICK_MS = 90;
+/** 응답을 기다리는 동안의 회전 속도(초당 각도). 한 바퀴에 약 0.9초 */
+const FREE_SPIN_DPS = 400;
+/** 멈출 때까지 도는 최소 바퀴 수. 적으면 "돌았다" 는 느낌이 안 난다 */
+const LANDING_TURNS = 3;
 /** SPEC §3.2 의 p_exclude_days 기본값 */
 const EXCLUDE_DAYS = 7;
 
@@ -112,8 +114,27 @@ export function PickView() {
     },
   });
 
-  // **결과는 응답으로 이미 정해져 있다.** 셔플은 그 뒤에 도는 연출이다 (SPEC §3.2).
-  const shuffling = useShuffle(pick.isSuccess ? pick.submittedAt : null);
+  /**
+   * **결과는 응답으로 이미 정해져 있다.** 룰렛은 그 뒤에 도는 연출이다 (SPEC §3.2).
+   *
+   * 뽑을 게 없었으면 안 돌린다. 멈출 칸이 없는데 돌면 아무 칸에나 서게 되고,
+   * 그건 "이게 나왔다" 로 읽힌다 — 실제로는 아무것도 안 나온 것이다.
+   */
+  const reduceMotion = useReducedMotion();
+  const shuffling = useShuffle(
+    pick.isSuccess && result !== null ? pick.submittedAt : null,
+    reduceMotion,
+  );
+
+  /**
+   * 판에 그릴 칸. 종류 목록 그대로지만, **뽑힌 종류는 반드시 들어 있어야 한다** —
+   * 목록이 낡아 그 종류가 빠져 있으면 멈출 칸이 없어서 엉뚱한 칸에 선다.
+   */
+  const wheelLabels = useMemo(() => {
+    const list = categoryList.data ?? [];
+    if (result === null || list.includes(result.category)) return list;
+    return [...list, result.category];
+  }, [categoryList.data, result]);
   const showResult = pick.isSuccess && !shuffling;
   // 뽑힌 곳이 화면에 있는지. 있으면 위 버튼이 [다시 뽑기] 가 된다.
   // 후보가 0건이었을 때는 되뽑을 대상이 없으므로 [뽑아줘] 그대로다.
@@ -262,11 +283,14 @@ export function PickView() {
       </div>
 
       <div aria-live="polite" className="min-h-0">
-        {/* 응답이 도착한 뒤(=shuffling)에만 남은 시간을 안다 */}
+        {/* 멈출 칸은 응답이 도착한 뒤에만 안다. 그 전까지는 그냥 돈다 */}
         {(pick.isPending || shuffling) && (
-          <Shuffling
-            determinate={!pick.isPending && shuffling}
-            labels={categoryList.data ?? []}
+          <Roulette
+            labels={wheelLabels}
+            targetIndex={
+              shuffling && result ? wheelLabels.indexOf(result.category) : null
+            }
+            reduce={reduceMotion}
           />
         )}
 
@@ -310,7 +334,7 @@ export function PickView() {
  * 네트워크가 느려도 셔플 도중 값이 바뀌지 않는 이유가 이것이다 (WBS 4.3 DoD).
  * `prefers-reduced-motion` 이면 셔플을 건너뛰고 즉시 보여준다.
  */
-function useShuffle(startedAt: number | null) {
+function useShuffle(startedAt: number | null, reduce: boolean) {
   const [running, setRunning] = useState(false);
   const last = useRef<number | null>(null);
 
@@ -318,9 +342,6 @@ function useShuffle(startedAt: number | null) {
     if (startedAt === null || startedAt === last.current) return;
     last.current = startedAt;
 
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduce) {
       setRunning(false);
       return;
@@ -329,58 +350,156 @@ function useShuffle(startedAt: number | null) {
     setRunning(true);
     const t = setTimeout(() => setRunning(false), SHUFFLE_MS);
     return () => clearTimeout(t);
-  }, [startedAt]);
+  }, [startedAt, reduce]);
 
   return running;
 }
 
 /**
- * 고르는 중 연출 + 진행 바.
+ * 움직임을 줄여 달라고 했는지 (CLAUDE.md 접근성).
  *
- * 바는 두 가지 상태를 구분해서 그린다. 이게 핵심이다:
- * - `determinate` — 응답을 이미 받았고 셔플만 도는 중이다. 남은 시간이
- *   정확히 `SHUFFLE_MS` 라서 그 시간에 맞춰 채운다.
- * - 아니면 — 아직 응답을 기다린다. 얼마나 걸릴지 모르므로 퍼센트를 지어내지 않고
- *   왕복만 시킨다. 여기서 1.2초짜리 채움을 쓰면 느린 네트워크에서 바가 다 차고도
- *   결과가 안 나오는, 대놓고 거짓말하는 화면이 된다.
- *
- * 바는 `aria-hidden` 이다. 진행률 자체는 1.2초짜리라 읽어 줄 값이 아니고,
- * 상태는 옆의 "고르는 중" 글자와 바깥의 `aria-live` 가 이미 알린다.
- * 색만으로 알리지 않는다는 규칙(CLAUDE.md)도 그 글자가 지킨다.
+ * 전역 미디어쿼리가 CSS 애니메이션은 이미 0.01ms 로 줄이지만, 여기는 rAF 로
+ * 도는 자바스크립트 연출이라 CSS 가 못 막는다. 값으로 받아서 아예 안 켠다.
+ * 서버에는 `matchMedia` 가 없으므로 첫 렌더는 항상 false 로 시작한다.
  */
-function Shuffling({
-  determinate,
-  labels,
-}: {
-  determinate: boolean;
-  labels: readonly string[];
-}) {
-  const [i, setI] = useState(0);
+function useReducedMotion() {
+  const [reduce, setReduce] = useState(false);
   useEffect(() => {
-    const t = setInterval(() => setI((v) => v + 1), TICK_MS);
-    return () => clearInterval(t);
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!mq) return;
+    setReduce(mq.matches);
+    const onChange = () => setReduce(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
   }, []);
-  // 목록을 아직 못 받았을 수 있다. 그때도 뭔가는 넘겨야 화면이 안 빈다.
-  const label = labels.length > 0 ? labels[i % labels.length] : "고르는 중";
+  return reduce;
+}
+
+/**
+ * 고르는 중 연출 — **룰렛** (2026-08-11 요청, 진행 바에서 교체).
+ *
+ * 바를 쓰던 이유는 "얼마나 남았나" 를 보여주기 위해서였는데, 1.2초짜리에
+ * 남은 시간은 알 필요가 없는 정보였다. 룰렛은 남은 시간 대신 **무엇을 뽑는
+ * 중인지**를 보여준다 — 칸 하나가 종류 하나고, 멈춘 칸이 곧 답이다.
+ *
+ * 두 상태를 구분하는 건 바와 똑같다. 이게 핵심이다:
+ * - `targetIndex === null` — 아직 응답을 기다린다. 어디에 멈출지 모르니 **일정한
+ *   속도로 계속 돈다.** 여기서 감속을 시작하면 "곧 멈춘다" 는 거짓말이 된다.
+ * - 숫자가 들어오면 — 응답이 왔고 답도 정해졌다. 그 칸에 오도록 몇 바퀴 더 돌며
+ *   감속한다. **판이 답을 정하는 게 아니라 답이 판을 세운다** (CLAUDE.md:
+ *   추천 결과는 서버가 결정한다).
+ *
+ * 판은 `aria-hidden` 이다. 답은 바깥 `aria-live` 가 결과 카드로 읽어 준다.
+ * 색만으로 알리지 않는다는 규칙은 가운데의 **칸 이름 글자**가 지킨다.
+ *
+ * 회전은 rAF 로 직접 돌린다. CSS 애니메이션 → 트랜지션으로 갈아타면 그 순간
+ * 각도가 튀는데(애니메이션 중의 값은 트랜지션의 시작점이 아니다), 각도를 한
+ * 곳에서 들고 있으면 그 문제가 아예 없다.
+ */
+function Roulette({
+  labels,
+  targetIndex,
+  reduce,
+}: {
+  labels: readonly Category[];
+  /** 멈출 칸. null 이면 아직 응답 전이라 계속 돈다 */
+  targetIndex: number | null;
+  /** 움직임을 줄여 달라고 한 사람에게는 안 돌린다 */
+  reduce: boolean;
+}) {
+  const discRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const angle = useRef(0);
+  /** 감속 구간. null 이면 등속으로 도는 중이다 */
+  const landing = useRef<{ from: number; to: number; start: number } | null>(
+    null,
+  );
+
+  const n = labels.length;
+
+  useEffect(() => {
+    if (targetIndex === null || n === 0) {
+      landing.current = null;
+      return;
+    }
+    const step = 360 / n;
+    // 칸 i 는 판 좌표로 [i*step, (i+1)*step). 바늘은 12시에 고정이라, 판을 R 만큼
+    // 돌리면 12시에 오는 칸 좌표는 (360 - R). 그게 칸 한가운데가 되게 R 을 고른다.
+    const want = (((360 - (targetIndex + 0.5) * step) % 360) + 360) % 360;
+    const from = angle.current;
+    // **앞으로만 돈다.** 뒤로 감기면 룰렛이 아니라 되감기로 보인다.
+    let to = Math.ceil(from / 360) * 360 + LANDING_TURNS * 360 + want;
+    while (to <= from) to += 360;
+    landing.current = { from, to, start: performance.now() };
+  }, [targetIndex, n]);
+
+  useEffect(() => {
+    if (reduce || n === 0) return;
+    let raf = 0;
+    let prev = performance.now();
+    const paint = (now: number) => {
+      const dt = now - prev;
+      prev = now;
+      const land = landing.current;
+      if (land) {
+        const t = Math.min((now - land.start) / SHUFFLE_MS, 1);
+        // 세제곱 ease-out. 마지막에 느려지는 것이 룰렛의 전부다.
+        angle.current = land.from + (land.to - land.from) * (1 - (1 - t) ** 3);
+      } else {
+        angle.current += (dt / 1000) * FREE_SPIN_DPS;
+      }
+      if (discRef.current) {
+        discRef.current.style.transform = `rotate(${angle.current}deg)`;
+      }
+      if (labelRef.current) {
+        // 지금 바늘 아래 있는 칸. 매 프레임 setState 하면 렌더가 60번 돈다 —
+        // 장식이라 DOM 에 직접 쓴다 (판과 같은 이유로 aria-hidden 안쪽이다).
+        const at = (((360 - (angle.current % 360)) % 360) + 360) % 360;
+        const name = labels[Math.floor(at / (360 / n)) % n];
+        if (labelRef.current.textContent !== name) {
+          labelRef.current.textContent = name;
+        }
+      }
+      raf = requestAnimationFrame(paint);
+    };
+    raf = requestAnimationFrame(paint);
+    return () => cancelAnimationFrame(raf);
+  }, [labels, n, reduce]);
+
+  // 종류가 하나뿐이면 판이 될 수 없다. 그때는 글자만 남긴다 —
+  // 칸이 하나인 룰렛은 돌 이유가 없고, 돌면 오히려 고장으로 보인다.
+  const drawable = n >= 2;
+  const step = 360 / Math.max(n, 1);
+  const stops = labels
+    .map((c, i) => `var(${categoryColorVar(c)}) ${i * step}deg ${(i + 1) * step}deg`)
+    .join(", ");
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-border p-6">
-      <span aria-hidden="true" className="text-display">
-        {label}
-      </span>
-
-      <span
-        aria-hidden="true"
-        className="h-1 w-full overflow-hidden rounded-chip bg-muted"
-      >
-        <span
-          className={
-            determinate
-              ? "block h-full w-full origin-left rounded-chip bg-primary animate-pick-fill"
-              : "block h-full w-1/4 rounded-chip bg-primary animate-pick-slide"
-          }
-        />
-      </span>
+      {drawable && (
+        <div aria-hidden="true" className="relative size-40">
+          {/* 바늘. 12시에 고정이고 판이 그 아래로 돈다 */}
+          <span
+            className="absolute -top-1 left-1/2 z-10 size-4 -translate-x-1/2 bg-foreground"
+            style={{ clipPath: "polygon(50% 100%, 0 0, 100% 0)" }}
+          />
+          <div
+            ref={discRef}
+            className="size-full rounded-full border border-border"
+            style={{ backgroundImage: `conic-gradient(${stops})` }}
+          />
+          {/* 가운데 창. 지금 바늘 아래 있는 칸 이름을 글자로 보여준다 —
+              색만으로 알리지 않는다 (CLAUDE.md). */}
+          <div className="absolute inset-[26%] flex items-center justify-center rounded-full border border-border bg-background px-1">
+            <span
+              ref={labelRef}
+              className="truncate text-label font-medium"
+            >
+              {labels[0]}
+            </span>
+          </div>
+        </div>
+      )}
 
       <span className="text-caption text-muted-foreground">고르는 중</span>
     </div>
