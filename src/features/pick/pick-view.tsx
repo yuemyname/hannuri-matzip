@@ -42,20 +42,8 @@ const SPIN_MIN_MS = 1000;
 const LANDING_MS = 2800;
 /** 선 자리를 보여주고 서 있는 시간. 이게 없으면 결과 카드가 판을 덮어 버린다 */
 const HOLD_MS = 700;
-/**
- * 등속 회전 속도(초당 각도). 한 바퀴에 0.4초.
- *
- * **세게 돌린다** (2026-08-11 정정). 예전엔 450°/s 에 한 바퀴 남짓만 더 돌고
- * 섰는데, 감속 뒷부분이 너무 느려서 "벌써 섰나" 로 보였다 — 시간은 다 흘렀는데
- * 눈에는 짧게 느껴진 것이다. 크게 돌리면 감속 내내 눈에 띄게 움직인다.
- *
- * 값은 감속 구간의 첫 속도(`2Δ/T`)에 맞춘다. `LANDING_TURNS` 3바퀴에 2.8초면
- * 771~1029°/s 라 900 이 그 한가운데다. 크게 어긋나면 감속이 시작될 때 판이 한 번
- * 튕기는 것처럼 보인다.
- */
-const FREE_SPIN_DPS = 900;
 /** 감속하며 최소 몇 바퀴를 더 도는지. 나머지는 설 자리를 맞추는 데 쓴다 */
-const LANDING_TURNS = 3;
+const LANDING_TURNS = 5;
 /** SPEC §3.2 의 p_exclude_days 기본값 */
 const EXCLUDE_DAYS = 7;
 
@@ -514,24 +502,19 @@ function useReducedMotion() {
  * 이름을 부챗살 방향으로 박으면 그제야 "돌아가는 판" 이 된다 — 그건 CSS 로는
  * 못 하고 캔버스가 필요하다.
  *
- * **회전도 캔버스 안에서 한다.** 캔버스 요소에 CSS `transform` 을 걸어 돌리면
- * 크로미움에서는 도는데 실기기(iOS Safari)에서는 안 돌았다 — 캔버스가 따로 합성
- * 레이어로 올라가면 변환이 화면에 안 나타나는 경우가 있다.
+ * **판은 한 번 그리고, 회전은 CSS 가 한다** (2026-08-11 재작업 — 사용자가 준
+ * 캔버스 예제와 같은 방식이다).
  *
- * 다만 프레임마다 **처음부터 다시 그리지는 않는다.** 그렇게 했더니 실기기에서
- * 뚝뚝 끊겼다 — 가변 글꼴 `fillText` 를 초당 400번 넘게 부르는 셈이다. 판은 한
- * 번만 그려 두고 프레임마다 그 그림을 돌려서 붙인다 (`drawImage` 한 번).
+ * 그전에는 자바스크립트가 매 프레임 각도를 옮겼다(rAF). 실기기에서 뚝뚝 끊겼는데,
+ * 원인은 그리는 비용이 아니라 **메인 스레드에 얹었다는 것 자체**다 — 이 화면
+ * 뒤에는 지도가 살아 있고 조회도 돈다. CSS 키프레임·트랜지션은 합성 스레드가
+ * 돌리므로 메인이 바쁘든 말든 안 끊긴다. 도는 동안 자바스크립트는 한 줄도 안 돈다.
  *
  * 색·글꼴은 **토큰에서 읽어 온다** (`readToken`). 캔버스는 CSS 를 모르니 값을
  * 넘겨야 하는데, 여기에 hex 나 px 를 적으면 토큰 정본이 두 군데가 된다.
  *
- * 판은 `aria-hidden` 이다. 답은 바깥 `aria-live` 가 결과 카드로 읽어 준다 —
- * 도는 동안 칸 이름이 매 프레임 바뀌는 걸 읽어 주면 소음이다. 색만으로 알리지
- * 않는다는 규칙은 **칸에 박힌 이름 글자**가 지킨다.
- *
- * 회전은 rAF 로 직접 돌린다. CSS 애니메이션 → 트랜지션으로 갈아타면 그 순간
- * 각도가 튀는데(애니메이션 중의 값은 트랜지션의 시작점이 아니다), 각도를 한
- * 곳에서 들고 있으면 그 문제가 아예 없다.
+ * 판은 `aria-hidden` 이다. 답은 바깥 `aria-live` 가 결과 카드로 읽어 준다.
+ * 색만으로 알리지 않는다는 규칙은 **칸에 박힌 이름 글자**가 지킨다.
  */
 function Roulette({
   labels,
@@ -548,17 +531,8 @@ function Roulette({
   reduce: boolean;
 }) {
   const discRef = useRef<HTMLCanvasElement>(null);
-  const angle = useRef(0);
-  /** 지금 각도로 판을 다시 그린다. 색·글꼴을 한 번 읽어 둔 뒤 채워진다 */
-  const drawRef = useRef<(deg: number) => void>(() => {});
-  /** 멈출 칸 (rAF 안에서 읽는다) */
-  const target = useRef<number | null>(null);
-  /** 감속을 시작할 시각(`performance.now()` 기준). null 이면 아직 답이 없다 */
-  const landAt = useRef<number | null>(null);
-  /** 감속 구간. 시작 시각이 되면 그 자리에서 만들어진다 */
-  const landing = useRef<{ from: number; to: number; start: number } | null>(
-    null,
-  );
+  /** 판을 그려 넣는다. 색·글꼴을 한 번 읽어 둔 뒤 채워진다 */
+  const drawRef = useRef<() => void>(() => {});
 
   const n = labels.length;
 
@@ -566,71 +540,78 @@ function Roulette({
   const restAngle = (i: number) =>
     ((((360 - (i + 0.5) * (360 / n)) % 360) + 360) % 360);
 
+  /**
+   * 회전은 **CSS 가 한다** (2026-08-11 재작업, 사용자가 준 예제와 같은 방식).
+   *
+   * 그전에는 rAF 로 매 프레임 각도를 옮겼는데 실기기에서 뚝뚝 끊겼다. 원인은
+   * 그리는 비용이 아니라 **메인 스레드에 얹었다는 것 자체**다 — 이 화면 뒤에는
+   * 지도가 살아 있고 조회도 돈다. CSS 키프레임과 트랜지션은 합성 스레드가
+   * 돌리므로 메인이 바쁘든 말든 안 끊긴다. 도는 동안 자바스크립트는 **한 줄도
+   * 안 돈다.**
+   *
+   *   답 대기 → `--animate-pick-spin` (등속 무한)
+   *   답 도착 → 지금 각도를 고정 → 리플로우 → 목표 각도로 한 번 트랜지션
+   *
+   * 가운데의 "지금 각도를 고정" 이 없으면 안 된다. 애니메이션이 그리는 값은
+   * 트랜지션의 시작점이 아니라서, 바로 목표를 걸면 0도에서 다시 출발한다.
+   */
+  const spinFree = () => {
+    const cv = discRef.current;
+    if (!cv) return;
+    cv.style.transition = "none";
+    cv.style.transform = "";
+    cv.style.animation = "var(--animate-pick-spin)";
+  };
+
+  const landOn = (i: number) => {
+    const cv = discRef.current;
+    if (!cv) return;
+    // 지금 화면에 보이는 각도. 애니메이션 도중이면 그 순간 값이다.
+    const m = new DOMMatrixReadOnly(getComputedStyle(cv).transform);
+    const from = (Math.atan2(m.b, m.a) * 180) / Math.PI;
+    const want = restAngle(i);
+    // **앞으로만 돈다.** 뒤로 감기면 룰렛이 아니라 되감기로 보인다.
+    let to = Math.ceil(from / 360) * 360 + LANDING_TURNS * 360 + want;
+    while (to <= from) to += 360;
+
+    cv.style.animation = "none";
+    cv.style.transition = "none";
+    cv.style.transform = `rotate(${from}deg)`;
+    // 리플로우. 이게 없으면 브라우저가 위 두 줄과 아래를 한 번에 묶어 버려서
+    // 트랜지션이 아예 안 걸린다.
+    void cv.offsetWidth;
+    cv.style.transition = `transform ${LANDING_MS}ms var(--ease-out-soft)`;
+    cv.style.transform = `rotate(${to}deg)`;
+  };
+
   useEffect(() => {
-    if (targetIndex === null || n === 0) {
-      target.current = null;
-      landAt.current = null;
-      landing.current = null;
+    const cv = discRef.current;
+    if (!cv || n === 0) return;
+
+    if (targetIndex === null) {
+      if (!reduce) spinFree();
       return;
     }
-    target.current = targetIndex;
 
     // 움직임을 줄여 달라고 했으면 **돌리지 않고 답 위에 세운다.**
     if (reduce) {
-      angle.current = restAngle(targetIndex);
-      drawRef.current(angle.current);
+      cv.style.animation = "none";
+      cv.style.transition = "none";
+      cv.style.transform = `rotate(${restAngle(targetIndex)}deg)`;
       return;
     }
 
     // **누른 시각 기준으로** 등속 구간이 얼마나 남았는지 잰다. 응답이 빨라도
     // 그만큼은 돌고 나서 감속한다 — 안 그러면 누르자마자 서 버린다.
-    landAt.current =
-      performance.now() + Math.max(0, spinStartedAt + SPIN_MIN_MS - Date.now());
-    landing.current = null;
+    const wait = Math.max(0, spinStartedAt + SPIN_MIN_MS - Date.now());
+    const t = setTimeout(() => landOn(targetIndex), wait);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetIndex, n, spinStartedAt, reduce]);
 
-  useEffect(() => {
-    if (reduce || n === 0) return;
-    let raf = 0;
-    let prev = performance.now();
-    const paint = (now: number) => {
-      const dt = now - prev;
-      prev = now;
-      // 감속 시작 시각이 지났으면 그 자리에서 감속 구간을 만든다. 미리 만들면
-      // 등속으로 더 도는 동안 시작 각도가 어긋난다.
-      if (!landing.current && landAt.current !== null && now >= landAt.current) {
-        const from = angle.current;
-        const want = restAngle(target.current ?? 0);
-        // **앞으로만 돈다.** 뒤로 감기면 룰렛이 아니라 되감기로 보인다.
-        let to = Math.ceil(from / 360) * 360 + LANDING_TURNS * 360 + want;
-        while (to <= from) to += 360;
-        landing.current = { from, to, start: now };
-      }
-
-      const land = landing.current;
-      if (land) {
-        const t = Math.min((now - land.start) / LANDING_MS, 1);
-        // 제곱 ease-out. 첫 속도가 `2Δ/T` 라 등속 구간 속도와 얼추 이어진다 —
-        // 세제곱(`3Δ/T`)이면 감속이 시작될 때 판이 한 번 튕기는 것처럼 보인다.
-        angle.current = land.from + (land.to - land.from) * (1 - (1 - t) ** 2);
-      } else {
-        angle.current += (dt / 1000) * FREE_SPIN_DPS;
-      }
-      drawRef.current(angle.current);
-      raf = requestAnimationFrame(paint);
-    };
-    raf = requestAnimationFrame(paint);
-    return () => cancelAnimationFrame(raf);
-  }, [n, reduce]);
-
   /**
-   * 판을 **한 번만** 그려 두고, 프레임마다 하는 일은 그 그림을 돌려서 붙이는
-   * 것뿐이다.
-   *
-   * 처음엔 프레임마다 부채꼴 일곱 + 글자 일곱을 다시 그렸는데, 실기기에서
-   * 뚝뚝 끊겼다 — 가변 글꼴 `fillText` 를 초당 400번 넘게 부르는 셈이라
-   * 사파리가 못 따라온다. 그림은 회전과 무관하게 늘 같으니 한 장 만들어 두고
-   * `drawImage` 한 번으로 끝낸다.
+   * 판을 그린다. **딱 한 번**이다 — 회전은 CSS 가 요소째로 돌리므로 그림은
+   * 안 바뀐다. 숨은 캔버스에 그린 뒤 한 번 옮겨 붙인다.
    */
   useEffect(() => {
     const cv = discRef.current;
@@ -713,17 +694,13 @@ function Roulette({
       if (rim) o.stroke();
     }
 
-    const half = cv.width / 2;
-    drawRef.current = (deg: number) => {
+    drawRef.current = () => {
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, cv.width, cv.height);
-      g.translate(half, half);
-      g.rotate((deg * Math.PI) / 180);
-      g.drawImage(off, -half, -half);
-      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.drawImage(off, 0, 0);
     };
 
-    drawRef.current(angle.current);
+    drawRef.current();
   }, [labels, n]);
 
   // 종류가 하나뿐이면 판이 될 수 없다. 그때는 글자만 남긴다 —
@@ -740,8 +717,8 @@ function Roulette({
             style={{ clipPath: "polygon(50% 100%, 0 0, 100% 0)" }}
           />
           {/* `rounded-full` 을 안 건다. 판은 이미 원으로 그려져 있어서 마스크가
-              하는 일이 없는데, 프레임마다 합성 비용만 낸다. */}
-          <canvas ref={discRef} className="size-full" />
+              하는 일이 없는데, 도는 내내 합성 비용만 낸다. */}
+          <canvas ref={discRef} className="size-full origin-center" />
         </div>
       )}
 

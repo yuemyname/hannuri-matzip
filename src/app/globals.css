@@ -122,6 +122,15 @@
   /* ---- Motion ---- */
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --animate-marker-pop: marker-pop 0.36s var(--ease-out-soft); /* 2.5 마커 강조 */
+  /* 점메추 룰렛이 답을 기다리며 도는 속도. 한 바퀴 0.4초.
+     **CSS 로 돌린다** — 자바스크립트로 매 프레임 돌리면 메인 스레드가 바쁠 때
+     뚝뚝 끊긴다 (2026-08-11 실기기). 키프레임은 합성 스레드가 돌려서 안 끊긴다. */
+  --animate-pick-spin: pick-spin 0.4s linear infinite;
+}
+
+@keyframes pick-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* 리스트에서 짚은 맛집이 지도 어디인지 눈으로 찾게 해주는 한 번짜리 튕김.
