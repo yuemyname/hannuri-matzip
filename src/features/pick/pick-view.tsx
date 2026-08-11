@@ -13,7 +13,7 @@ import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
 import { categoryColorVar, type Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
-import { OFFICE, RADIUS_OPTIONS } from "@/features/map/config";
+import { OFFICE, RADIUS_OPTIONS, readToken } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView } from "@/features/map/map-store";
 import { PRICE_LABEL, priceReasonAt } from "@/features/restaurants/price";
@@ -477,8 +477,17 @@ function useReducedMotion() {
  *   감속한다. **판이 답을 정하는 게 아니라 답이 판을 세운다** (CLAUDE.md:
  *   추천 결과는 서버가 결정한다).
  *
- * 판은 `aria-hidden` 이다. 답은 바깥 `aria-live` 가 결과 카드로 읽어 준다.
- * 색만으로 알리지 않는다는 규칙은 가운데의 **칸 이름 글자**가 지킨다.
+ * 판은 **캔버스로 그린다** (2026-08-11 재작업). 처음엔 `conic-gradient` + 가운데
+ * 창이었는데, 색 조각만 돌고 이름이 한 개만 보여서 룰렛처럼 안 보였다. 칸마다
+ * 이름을 부챗살 방향으로 박으면 그제야 "돌아가는 판" 이 된다 — 그건 CSS 로는
+ * 못 하고 캔버스가 필요하다.
+ *
+ * 색·글꼴은 **토큰에서 읽어 온다** (`readToken`). 캔버스는 CSS 를 모르니 값을
+ * 넘겨야 하는데, 여기에 hex 나 px 를 적으면 토큰 정본이 두 군데가 된다.
+ *
+ * 판은 `aria-hidden` 이다. 답은 바깥 `aria-live` 가 결과 카드로 읽어 준다 —
+ * 도는 동안 칸 이름이 매 프레임 바뀌는 걸 읽어 주면 소음이다. 색만으로 알리지
+ * 않는다는 규칙은 **칸에 박힌 이름 글자**가 지킨다.
  *
  * 회전은 rAF 로 직접 돌린다. CSS 애니메이션 → 트랜지션으로 갈아타면 그 순간
  * 각도가 튀는데(애니메이션 중의 값은 트랜지션의 시작점이 아니다), 각도를 한
@@ -495,8 +504,7 @@ function Roulette({
   /** 움직임을 줄여 달라고 한 사람에게는 안 돌린다 */
   reduce: boolean;
 }) {
-  const discRef = useRef<HTMLDivElement>(null);
-  const labelRef = useRef<HTMLSpanElement>(null);
+  const discRef = useRef<HTMLCanvasElement>(null);
   const angle = useRef(0);
   /** 감속 구간. null 이면 등속으로 도는 중이다 */
   const landing = useRef<{ from: number; to: number; start: number } | null>(
@@ -539,28 +547,94 @@ function Roulette({
       if (discRef.current) {
         discRef.current.style.transform = `rotate(${angle.current}deg)`;
       }
-      if (labelRef.current) {
-        // 지금 바늘 아래 있는 칸. 매 프레임 setState 하면 렌더가 60번 돈다 —
-        // 장식이라 DOM 에 직접 쓴다 (판과 같은 이유로 aria-hidden 안쪽이다).
-        const at = (((360 - (angle.current % 360)) % 360) + 360) % 360;
-        const name = labels[Math.floor(at / (360 / n)) % n];
-        if (labelRef.current.textContent !== name) {
-          labelRef.current.textContent = name;
-        }
-      }
       raf = requestAnimationFrame(paint);
     };
     raf = requestAnimationFrame(paint);
     return () => cancelAnimationFrame(raf);
-  }, [labels, n, reduce]);
+  }, [n, reduce]);
+
+  // 칸을 그린다. 판이 도는 것은 CSS transform 이고, 그림 자체는 안 바뀐다 —
+  // 매 프레임 다시 그리면 글자가 계속 재래스터되어 흐려지고 배터리도 먹는다.
+  useEffect(() => {
+    const cv = discRef.current;
+    if (!cv || n < 2) return;
+    const g = cv.getContext("2d");
+    if (!g) return;
+
+    // 레티나에서 글자가 뭉개지지 않게 실제 픽셀로 키워 그린다.
+    const size = cv.clientWidth;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    cv.width = Math.round(size * dpr);
+    cv.height = Math.round(size * dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, size, size);
+
+    const c = size / 2;
+    const arc = (2 * Math.PI) / n;
+    const rim = readToken("--border");
+    const ink = readToken("--primary-foreground");
+
+    for (let i = 0; i < n; i++) {
+      const fill = readToken(categoryColorVar(labels[i]));
+      if (!fill) continue;
+      g.beginPath();
+      g.fillStyle = fill;
+      g.moveTo(c, c);
+      // 12시에서 시작해 시계방향. 바늘이 12시라 칸 번호와 각도가 그대로 맞는다.
+      g.arc(c, c, c - 1, arc * i - Math.PI / 2, arc * (i + 1) - Math.PI / 2);
+      g.fill();
+    }
+
+    // 칸 이름을 부챗살 방향으로 박는다. 이게 없으면 색 조각만 도는 것으로 보인다.
+    const rootPx = parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    );
+    const rem = parseFloat(readToken("--text-label") ?? "");
+    const family = readToken("--font-sans") ?? "";
+    if (Number.isFinite(rem) && Number.isFinite(rootPx) && ink) {
+      // 칸이 많아질수록 글자를 줄인다. 안 줄이면 이웃 칸 글자와 겹친다.
+      const px = rem * rootPx * (n > 9 ? 0.86 : 1);
+      g.font = `600 ${px}px ${family}`;
+      g.fillStyle = ink;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      for (let i = 0; i < n; i++) {
+        const a = arc * i + arc / 2 - Math.PI / 2;
+        const r = c * 0.62; // 테두리와 가운데 사이. 이름이 가장 잘 놓이는 자리
+        // **여기서 위아래를 따로 뒤집지 않는다.** 판이 통째로 도는 그림이라,
+        // 판 좌표에서 내린 판단은 돌아간 뒤엔 틀린다. 이 각도로 그려 두면
+        // **바늘에 선 칸은 언제나 화면에서 똑바로 선다** — 착지 회전량이
+        // 정확히 이 각도를 상쇄하기 때문이다. 나머지 칸이 기울어 보이는 건
+        // 진짜 룰렛판과 같은 모습이고, 읽어야 할 것은 선 칸 하나뿐이다.
+        g.save();
+        g.translate(c + Math.cos(a) * r, c + Math.sin(a) * r);
+        g.rotate(a + Math.PI / 2);
+        g.fillText(labels[i], 0, 0, c * 0.72);
+        g.restore();
+      }
+    }
+
+    // 테두리와 가운데 축. 축이 있어야 "돌아가는 판" 으로 읽힌다.
+    if (rim) {
+      g.strokeStyle = rim;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.arc(c, c, c - 1, 0, Math.PI * 2);
+      g.stroke();
+    }
+    const hub = readToken("--background");
+    if (hub) {
+      g.fillStyle = hub;
+      g.beginPath();
+      g.arc(c, c, size * 0.055, 0, Math.PI * 2);
+      g.fill();
+      if (rim) g.stroke();
+    }
+  }, [labels, n]);
 
   // 종류가 하나뿐이면 판이 될 수 없다. 그때는 글자만 남긴다 —
   // 칸이 하나인 룰렛은 돌 이유가 없고, 돌면 오히려 고장으로 보인다.
   const drawable = n >= 2;
-  const step = 360 / Math.max(n, 1);
-  const stops = labels
-    .map((c, i) => `var(${categoryColorVar(c)}) ${i * step}deg ${(i + 1) * step}deg`)
-    .join(", ");
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-border p-6">
@@ -571,18 +645,7 @@ function Roulette({
             className="absolute -top-1 left-1/2 z-10 size-5 -translate-x-1/2 bg-foreground"
             style={{ clipPath: "polygon(50% 100%, 0 0, 100% 0)" }}
           />
-          <div
-            ref={discRef}
-            className="size-full rounded-full border border-border"
-            style={{ backgroundImage: `conic-gradient(${stops})` }}
-          />
-          {/* 가운데 창. 지금 바늘 아래 있는 칸 이름을 글자로 보여준다 —
-              색만으로 알리지 않는다 (CLAUDE.md). */}
-          <div className="absolute inset-[26%] flex items-center justify-center rounded-full border border-border bg-background px-1">
-            <span ref={labelRef} className="truncate text-subtitle font-medium">
-              {labels[0]}
-            </span>
-          </div>
+          <canvas ref={discRef} className="size-full rounded-full" />
         </div>
       )}
 
