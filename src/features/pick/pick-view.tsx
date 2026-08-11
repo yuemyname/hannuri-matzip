@@ -13,7 +13,7 @@ import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
 import type { Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
-import { RADIUS_OPTIONS } from "@/features/map/config";
+import { OFFICE, RADIUS_OPTIONS } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView } from "@/features/map/map-store";
 import { PRICE_LABEL, priceReasonAt } from "@/features/restaurants/price";
@@ -146,7 +146,7 @@ export function PickView() {
           ? "지금 보고 있는 지도 한가운데를 기준으로 찾아요. 다른 동네를 보려면 지도를 옮겨 주세요"
           : status === "granted"
             ? "내 위치를 기준으로 찾아요"
-            : "위치를 못 얻어서 사무실을 기준으로 찾아요"}
+            : `위치를 못 얻어서 ${OFFICE.name}을 기준으로 찾아요`}
       </p>
 
       <fieldset className="flex flex-col gap-2">

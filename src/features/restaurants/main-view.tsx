@@ -7,24 +7,34 @@ import { MapPanel } from "@/features/map/map-panel";
 import { hasSeenWelcome } from "@/features/onboarding/seen";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
-import { FETCH_LIMIT, MIN_QUERY_ZOOM } from "@/features/map/config";
+import { FETCH_LIMIT, MIN_QUERY_ZOOM, OFFICE } from "@/features/map/config";
 import { metersBetween } from "@/features/map/geo";
 import type { Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
+import { usePinMode } from "./pin-store";
 import { useInBounds } from "./use-nearby";
 import { MapControls } from "./map-controls";
 import { RestaurantCard } from "./restaurant-card";
+import type { NearbyRestaurant } from "./api";
 import type { SelectSource } from "./select-source";
 
 /**
  * 메인 셸 — 지도 한 장 + 그 위에 뜨는 플로팅 컨트롤 (SPEC §4.1).
  *
- * **리스트는 없다.** 화면은 지도가 전부고, 반경·카테고리 토글은 그 위에 떠 있다.
- * 토글을 바꾸면 조회 조건이 바뀌고, 마커는 그 결과 배열을 그대로 그린다 —
- * 그래서 "고른 종류만 마커로 보인다"가 별도 필터 없이 성립한다.
+ * 반경·카테고리 토글이 지도 위에 떠 있다. 토글을 바꾸면 조회 조건이 바뀌고,
+ * 마커는 그 결과 배열을 그대로 그린다 — 그래서 "고른 종류만 마커로 보인다"가
+ * 별도 필터 없이 성립한다. 마커를 고르면 그 한 곳만 카드로 지도 위에 띄운다.
  *
- * 리스트가 없어진 대신, 마커를 고르면 그 한 곳만 카드로 지도 위에 띄운다.
- * 카드가 없으면 지도에서 상세로 갈 길이 아예 사라진다.
+ * **리스트가 돌아왔다** (2026-08-11 요청). 2026-08-08 에 걷어냈던 것인데,
+ * 그때 이유는 "같은 정보를 두 군데서 두 번 보여준다" 였다. 지금은 그 둘이
+ * **동시에** 있지 않다 — 한 번에 하나만 보이고 버튼으로 갈아탄다. 그리고
+ * 첫 화면은 리스트다: 처음 들어온 사람이 알고 싶은 건 "여기서 뭐가 제일
+ * 가깝나" 인데, 그건 핀 스무 개보다 줄 세운 목록이 훨씬 빨리 답한다.
+ *
+ * **지도는 리스트 뒤에서 계속 살아 있다.** 언마운트하면 (1) 조회 범위를
+ * 지도가 들고 있어서 목록이 통째로 비고, (2) 되돌아올 때 지도를 새로 만들며
+ * 카메라가 튄다. 그래서 덮기만 하고, 덮는 동안은 `inert` 로 포커스와 조작을
+ * 막는다 — 안 막으면 Tab 이 안 보이는 지도 마커들을 지나간다.
  *
  * 카테고리는 zustand 에 넣지 않는다 — 스토어는 지도 뷰 상태만 담는다 (CLAUDE.md).
  * 대신 이 컴포넌트가 들고 있어서 모달을 열고 닫아도 유지된다.
@@ -50,13 +60,19 @@ function useFirstRunWelcome() {
   }, [router]);
 }
 
-/** 펼쳤을 때 뜨는 항목. 셋의 크기를 맞춰 오른쪽 변이 한 줄로 떨어지게 한다 */
+/**
+ * 펼쳤을 때 뜨는 항목. 셋의 크기를 맞춰 오른쪽 변이 한 줄로 떨어지게 한다.
+ *
+ * 높이를 **못 박는다.** 안 박으면 글자 상자가 높이를 정하는데, 점메추만
+ * `font-medium` 이라 폰트가 로드된 뒤 2px 낮아진다 — 셋을 세로로 쌓아 놓으면
+ * 그 2px 이 눈에 띈다 (그리고 폰트 로드 전후로 값이 달라 검사도 흔들린다).
+ */
 const ACTION =
-  "inline-flex w-24 shrink-0 items-center justify-center rounded-chip border border-border bg-background px-3 py-2 text-label shadow-pop hover:bg-muted";
+  "inline-flex h-9 w-24 shrink-0 items-center justify-center rounded-chip border border-border bg-background px-3 text-label shadow-pop hover:bg-muted";
 
 /** 점메추만 색을 채운다. 이 앱에서 제일 자주 누르는 버튼이라 눈에 먼저 걸려야 한다 */
 const ACTION_PRIMARY =
-  "inline-flex w-24 shrink-0 items-center justify-center rounded-chip bg-primary px-3 py-2 text-label font-medium text-primary-foreground shadow-pop hover:bg-brand-700";
+  "inline-flex h-9 w-24 shrink-0 items-center justify-center rounded-chip bg-primary px-3 text-label font-medium text-primary-foreground shadow-pop hover:bg-brand-700";
 
 const MENU = [
   { href: "/pick", label: "점메추", primary: true },
@@ -67,6 +83,55 @@ const MENU = [
 ] as const;
 
 type Position = ReturnType<typeof useCurrentPosition>;
+
+/** 지도 / 리스트. **첫 진입은 리스트다** (2026-08-11 요청) */
+type ViewMode = "list" | "map";
+
+/**
+ * 보기 전환. 지도 **왼쪽 위** — 오른쪽 위는 이미 [◎][🔍][+] 로 차 있고,
+ * 360px 에서 넷을 한 줄에 두면 폭을 다 먹는다.
+ *
+ * 기호가 아니라 글자를 쓴다. 지도/리스트를 아이콘 두 개로 구분하는 관습이
+ * 확실하지 않아서, 아이콘만 두면 "지금 어느 쪽인지" 를 색으로만 알리게 된다.
+ */
+function ViewToggle({
+  value,
+  onChange,
+}: {
+  value: ViewMode;
+  onChange: (v: ViewMode) => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute top-3 left-3 z-[var(--z-filterbar)]">
+      <div
+        role="group"
+        aria-label="보기 방식"
+        className="pointer-events-auto flex gap-1 rounded-chip border border-border bg-background p-1 shadow-pop"
+      >
+        {(["list", "map"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            // 지도 컨테이너의 이름이 그냥 「지도」라, 버튼까지 「지도」면 화면에
+            // 같은 이름이 둘이 된다. 보이는 글자는 짧게 두고 이름만 늘린다
+            // (보이는 글자가 이름에 들어 있어야 한다 — WCAG 2.5.3).
+            aria-label={m === "list" ? "리스트로 보기" : "지도로 보기"}
+            // 켜진 쪽을 색으로만 알리지 않는다. aria-pressed 가 소리로도 읽힌다.
+            aria-pressed={value === m}
+            onClick={() => onChange(m)}
+            className={`rounded-chip px-3 py-1.5 text-label transition-colors ${
+              value === m
+                ? "bg-primary font-medium text-primary-foreground"
+                : "text-foreground hover:bg-muted"
+            }`}
+          >
+            {m === "list" ? "리스트" : "지도"}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * [내 위치] — 지도를 내 위치로 되돌린다.
@@ -211,9 +276,102 @@ function MapActions({ position }: { position: Position }) {
   );
 }
 
+/**
+ * 리스트 보기 — **가까운 순**이 전부다 (2026-08-11 요청).
+ *
+ * 정렬 고르개를 안 둔다. 별점순·가격순을 붙이면 셋 중 무엇으로 보고 있는지를
+ * 매번 확인해야 하는데, 점심 십오 분 안에 정하는 화면에서 그건 일이 하나 느는
+ * 것이다. "제일 가까운 곳부터" 하나로 못 푸는 요구가 나오면 그때 붙인다.
+ *
+ * 보이는 대상은 **지도와 같다** — 같은 조회 결과를 줄로 세운 것뿐이다. 목록만
+ * 따로 조회하면 "지도엔 있는데 목록엔 없다" 가 생기고, 그걸 설명할 방법이 없다.
+ */
+function NearbyList({
+  restaurants,
+  basis,
+  isLoading,
+  isError,
+  onRetry,
+  tooWide,
+}: {
+  restaurants: (NearbyRestaurant & { distanceM: number })[];
+  /** 무엇을 기준으로 잰 거리인지. 이 줄이 없으면 "가까운" 이 어디서부터인지 모른다 */
+  basis: string;
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
+  tooWide: boolean;
+}) {
+  const sorted = useMemo(
+    () => [...restaurants].sort((a, b) => a.distanceM - b.distanceM),
+    [restaurants],
+  );
+
+  return (
+    <div
+      // 지도를 덮는다. 떠 있는 컨트롤(z-filterbar)보다는 아래라 필터·전환 버튼이
+      // 그대로 보인다. 아래 여백은 그 컨트롤이 마지막 카드를 가리지 않을 만큼.
+      className="absolute inset-0 z-[var(--z-list)] overflow-y-auto overscroll-contain bg-background px-3 pt-16 pb-44"
+    >
+      <div className="mx-auto flex w-full max-w-[560px] flex-col gap-2">
+        <p className="text-caption text-muted-foreground">{basis}</p>
+
+        {tooWide ? (
+          <p role="status" className="py-10 text-center text-muted-foreground">
+            지도를 너무 넓게 보고 있어요. 조금 확대하면 맛집이 보여요
+          </p>
+        ) : isError ? (
+          <div
+            role="status"
+            className="flex flex-col items-center gap-3 py-10 text-center"
+          >
+            <p>맛집을 불러오지 못했어요</p>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-chip border border-border px-3 py-1.5 text-label hover:bg-muted"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : isLoading ? (
+          <p role="status" className="py-10 text-center text-muted-foreground">
+            불러오는 중
+          </p>
+        ) : sorted.length === 0 ? (
+          // 빈 상태는 행동 유도 (CLAUDE.md). 여기서 할 일은 검색으로 담는 것이다.
+          <p role="status" className="py-10 text-center text-muted-foreground">
+            이 근처에 등록된 맛집이 없어요. 🔍 로 찾아서 담아 보세요
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {sorted.map((r) => (
+              <li key={r.id}>
+                <RestaurantCard restaurant={r} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function MainView() {
   useFirstRunWelcome();
   const position = useCurrentPosition();
+  // **첫 진입은 리스트다.** 새로고침할 때마다 리스트로 돌아온다 — 저장하지
+  // 않는 게 요청 그대로다 ("최초에는 리스트뷰").
+  const [view, setView] = useState<ViewMode>("list");
+  /**
+   * 등록 화면의 핀 조정 단계에서는 **무조건 지도다** (SHELL.md §4).
+   *
+   * 그 단계는 모달을 아래로 내리고 배경 지도를 끌어 핀을 맞추는 일인데, 리스트가
+   * 덮고 있으면 끌 지도가 없다. 고른 값(`view`)을 건드리지 않고 덮어쓰기만 한다 —
+   * 핀을 끝내면 보던 쪽으로 그대로 돌아온다.
+   */
+  const pinning = usePinMode((s) => s.active);
+  const shown: ViewMode = pinning ? "map" : view;
   const selectedId = useMapView((s) => s.selectedId);
   const setSelectedId = useMapView((s) => s.setSelectedId);
 
@@ -297,7 +455,18 @@ export function MainView() {
   const clearCategories = useCallback(() => setCategories([]), []);
 
   // 고른 곳이 필터 밖으로 나가면 카드도 같이 사라져야 한다.
-  const selected = restaurants.find((r) => r.id === selectedId) ?? null;
+  // 리스트로 보는 동안에는 안 띄운다 — 목록에 이미 같은 카드가 있고, 그 위에
+  // 한 장이 더 떠 있으면 어느 게 "고른 것" 인지 알 수 없다.
+  const selected =
+    shown === "map"
+      ? (restaurants.find((r) => r.id === selectedId) ?? null)
+      : null;
+
+  // "가까운" 이 어디서부터인지 적는다. 위치를 안 주면 사무실이 기준이고,
+  // 그건 감출 게 아니라 첫 줄에 밝힐 일이다 (점메추의 기준 안내와 같은 규칙).
+  const basis = position.isFallback
+    ? `${OFFICE.name}에서 가까운 순이에요`
+    : "내 위치에서 가까운 순이에요";
 
   return (
     // 지도가 화면을 통째로 쓴다. 컨트롤·카드는 그 위에 떠 있다.
@@ -307,7 +476,10 @@ export function MainView() {
           그것들이 쌓임 맥락을 안 만들고 문서 최상위에서 경쟁해서 모달(z 50)
           위로 뚫고 올라온다 — 안내 팝업 위에 "© NAVER Corp." 가 찍혔다.
           여기서 쌓임 맥락을 만들어 지도의 내부 z-index 를 가둔다. */}
-      <div className="absolute inset-0 z-[var(--z-map)]">
+      {/* 리스트로 보는 동안에도 **언마운트하지 않는다.** 조회 범위를 이 지도가
+          들고 있어서 걷어내면 목록까지 빈다. 대신 `inert` 로 잠근다 — 덮여 있는
+          동안 Tab 이 안 보이는 마커들을 지나가면 안 된다. */}
+      <div className="absolute inset-0 z-[var(--z-map)]" inert={shown === "list"}>
         <MapPanel
           position={position}
           restaurants={restaurants}
@@ -316,6 +488,21 @@ export function MainView() {
           onSelect={handleSelect}
         />
       </div>
+
+      {shown === "list" && (
+        <NearbyList
+          restaurants={restaurants}
+          basis={basis}
+          isLoading={query.isPending}
+          isError={query.isError}
+          onRetry={() => void query.refetch()}
+          tooWide={tooWide}
+        />
+      )}
+
+      {/* 왼쪽 위 = 무엇으로 볼지. 오른쪽(무엇을 할지)과 층을 나눈다.
+          핀을 맞추는 동안에는 감춘다 — 눌러도 안 바뀌는 버튼을 두지 않는다. */}
+      {!pinning && <ViewToggle value={view} onChange={setView} />}
 
       {/* 오른쪽 위 = 무엇을 할지. 아래(필터·카드)와 층을 나눈다.
           평소에는 [+] 하나만 떠 있어서 지도를 거의 안 가린다. */}

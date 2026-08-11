@@ -15,11 +15,32 @@ export function naverMapsSdkUrl(clientId: string) {
   return `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(clientId)}&submodules=geocoder`;
 }
 
-/** GPS 를 못 쓸 때 기준이 되는 사무실 좌표 (SPEC §1.2, §5). 1.2 에서 실제 위치로 대체된다. */
-export const FALLBACK_CENTER = {
-  lat: Number(process.env.NEXT_PUBLIC_FALLBACK_LAT ?? 37.537247),
-  lng: Number(process.env.NEXT_PUBLIC_FALLBACK_LNG ?? 127.082473),
+/**
+ * 사무실 — 위치를 못 얻었을 때의 기준점 (SPEC §1.2, §5).
+ *
+ * 위치 공유를 안 해도 앱이 **여기 기준으로** 움직인다. 지도가 여기서 열리고,
+ * 목록이 여기서 가까운 순으로 서고, 카드에 적히는 거리도 여기서 잰 값이다.
+ *
+ * > **좌표는 대략값이다.** 지번(내자동 219)을 좌표로 바꿔 줄 지오코딩을 이
+ * > 환경에서 못 부른다 (네이버·OSM 둘 다 막혀 있다). 내자동 일대를 가리키지만
+ * > 건물 정확도는 아니라, 점메추 30m 같은 좁은 반경에서는 어긋날 수 있다.
+ * > **정확한 값을 알면 여기 두 줄만 고치면 된다** — 네이버 지도에서 건물을
+ * > 우클릭하면 좌표가 나온다.
+ *
+ * **환경변수로 안 받는다** (2026-08-11). 예전에는 `NEXT_PUBLIC_FALLBACK_LAT/LNG`
+ * 가 이걸 덮었는데, 배포에 옛 좌표(구의동)가 남아 있으면 코드를 아무리 고쳐도
+ * 배포본은 안 바뀐다 — 실제로 그 상태였다. 사무실은 하나뿐이고 바뀔 일이 거의
+ * 없으니, 정본을 여기 한 곳에 둔다.
+ */
+export const OFFICE = {
+  name: "한누리빌딩",
+  address: "서울 종로구 내자동 219",
+  lat: 37.5754,
+  lng: 126.9723,
 };
+
+/** GPS 를 못 쓸 때 기준이 되는 좌표 (SPEC §5). 사무실과 같은 값이다 */
+export const FALLBACK_CENTER = { lat: OFFICE.lat, lng: OFFICE.lng };
 
 export const DEFAULT_ZOOM = 16;
 

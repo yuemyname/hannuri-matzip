@@ -8,7 +8,7 @@ import type { NearbyRestaurant } from "@/features/restaurants/api";
 import type { SelectSource } from "@/features/restaurants/select-source";
 import { usePinMode } from "@/features/restaurants/pin-store";
 import { clusterByGrid } from "./cluster";
-import { DEFAULT_ZOOM, MAX_ZOOM, ZOOM_INTO_STEP } from "./config";
+import { DEFAULT_ZOOM, MAX_ZOOM, OFFICE, ZOOM_INTO_STEP } from "./config";
 
 /**
  * 지도 + 위치 배너. 메인에서만 마운트한다 (지도 인스턴스는 앱 전체에 하나).
@@ -216,7 +216,7 @@ function Notice({
     return (
       <Bubble>
         <span className="flex flex-col">
-          <span>사무실 기준으로 표시 중</span>
+          <span>{OFFICE.name} 기준으로 표시 중</span>
           <span className="text-caption text-muted-foreground">
             위치는 https 주소에서만 쓸 수 있어요. 배포된 주소로 열어 주세요
           </span>
@@ -239,7 +239,7 @@ function Notice({
     return (
       <Bubble>
         <span className="flex flex-col">
-          <span>현재 위치를 사용할 수 없어 사무실 기준으로 표시 중</span>
+          <span>현재 위치를 사용할 수 없어 {OFFICE.name} 기준으로 표시 중</span>
           {/* 브라우저가 프롬프트조차 안 띄우고 거절하는 경우가 있다.
               **iPhone 은 고칠 자리가 브라우저가 아니라 iOS 설정 앱이다.**
               "브라우저 설정" 이라고만 적어 두면 사파리 안을 아무리 뒤져도 못 찾는다
