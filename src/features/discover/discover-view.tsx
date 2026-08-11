@@ -87,11 +87,29 @@ export function DiscoverView() {
   // (등록 폼에서 이미 한 번 겪었다 — use-hold-height.ts).
   const hold = useHoldHeight(search.isFetching);
 
+  /**
+   * 우리 것도 **찾는 조건에 맞춰 거른다** (2026-08-11).
+   *
+   * 「분식」을 눌렀는데 한식·카페가 그대로 남아 있었다. 칩이 네이버 검색어만
+   * 좁히고 이 칸은 안 걸렀던 탓이다. 같은 화면에서 같은 칩을 눌렀는데 위아래가
+   * 다른 것을 보고 있으면 그 칩이 무엇을 하는 건지 알 수가 없다.
+   *
+   * **거르는 건 화면에서 한다.** 조회 자체를 좁히면 안 된다 — 아래 `known` 이
+   * 이 목록으로 "이미 등록된 곳" 을 걸러내는데, 그게 종류별로 좁아지면 다른
+   * 종류로 등록해 둔 집이 네이버 후보로 다시 뜨고 눌러도 인덱스가 막는다.
+   */
+  const mineAll = useMemo(() => {
+    const all = registered.data ?? [];
+    if (debounced.length >= 2) {
+      const q = debounced.toLowerCase();
+      return all.filter((r) => r.name.toLowerCase().includes(q));
+    }
+    if (category !== null) return all.filter((r) => r.category === category);
+    return all;
+  }, [registered.data, category, debounced]);
+
   /** 맨 위에 얹는 우리 것. 가까운 순으로 목록의 ¾ 까지 (아래 주석 참고) */
-  const mine = useMemo(
-    () => (registered.data ?? []).slice(0, MINE_MAX),
-    [registered.data],
-  );
+  const mine = useMemo(() => mineAll.slice(0, MINE_MAX), [mineAll]);
 
   const allCandidates = useMemo(() => {
     // **자르기 전 전체**로 거른다. 넷만 보고 거르면 다섯 번째로 가까운 등록분이
@@ -186,8 +204,9 @@ export function DiscoverView() {
         <section className="flex flex-col gap-2">
           <h3 className="text-label font-medium">
             내 지도에 있는 곳{" "}
+            {/* 거른 뒤의 수다. 전체를 적으면 「분식 31」 처럼 읽혀서 틀린 말이 된다 */}
             <span className="tnum font-normal text-muted-foreground">
-              {registered.data?.length ?? 0}
+              {mineAll.length}
             </span>
           </h3>
           <ul className="flex flex-col gap-2">
@@ -198,7 +217,7 @@ export function DiscoverView() {
             ))}
           </ul>
           {/* 몇 개를 감췄는지 적는다. 조용히 자르면 "이게 전부" 로 읽힌다 */}
-          {(registered.data?.length ?? 0) > mine.length && (
+          {mineAll.length > mine.length && (
             <p className="text-caption text-muted-foreground">
               가까운 {mine.length}곳만 보여줘요. 나머지는 지도에서 보세요
             </p>
