@@ -7,6 +7,16 @@ import { DEFAULT_RADIUS } from "./config";
 
 export type LatLng = { lat: number; lng: number };
 
+/**
+ * 메인 화면을 지도로 볼지 리스트로 볼지 (2026-08-11).
+ *
+ * 카메라와 같은 성격이라 여기 둔다 — "지금 무엇을 어떻게 보고 있나" 다.
+ * 저장하는 이유는 새로고침 때문이다. 지도를 보다 새로고침했는데 리스트로
+ * 튕기면 보고 있던 자리를 잃는다. 저장소가 sessionStorage 라 **탭을 새로
+ * 열면 다시 리스트**다 — 요청의 "최초에는 리스트뷰" 는 그대로 산다.
+ */
+export type ViewMode = "list" | "map";
+
 /** 지도 뷰포트. 조회 범위가 반경에서 이걸로 바뀌었다 */
 export type Bounds = {
   minLat: number;
@@ -32,6 +42,8 @@ type MapViewState = {
   radius: number;
   /** 선택된 맛집. 2.3 에서 마커 클릭이 채운다 */
   selectedId: string | null;
+  /** 지도로 볼지 리스트로 볼지. 첫 방문은 리스트 (§4.1) */
+  view: ViewMode;
   /**
    * "카메라를 여기로 옮겨라" 는 **명령**이다. 상태가 아니라 한 번 쓰고 버린다.
    *
@@ -46,6 +58,7 @@ type MapViewState = {
   setView: (center: LatLng, zoom: number, bounds: Bounds | null) => void;
   setRadius: (radius: number) => void;
   setSelectedId: (selectedId: string | null) => void;
+  setViewMode: (view: ViewMode) => void;
   requestFlyTo: (to: LatLng) => void;
   clearFlyTo: () => void;
 };
@@ -58,12 +71,14 @@ export const useMapView = create<MapViewState>()(
       bounds: null,
       radius: DEFAULT_RADIUS,
       selectedId: null,
+      view: "list",
       flyTo: null,
       // bounds 를 못 읽었으면 예전 값을 지우지 않는다. 지우면 조회가 멈춘다.
       setView: (center, zoom, bounds) =>
         set(bounds ? { center, zoom, bounds } : { center, zoom }),
       setRadius: (radius) => set({ radius }),
       setSelectedId: (selectedId) => set({ selectedId }),
+      setViewMode: (view) => set({ view }),
       requestFlyTo: (to) =>
         set((s) => ({ flyTo: { ...to, nonce: (s.flyTo?.nonce ?? 0) + 1 } })),
       clearFlyTo: () => set({ flyTo: null }),

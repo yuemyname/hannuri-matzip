@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { MapPanel } from "@/features/map/map-panel";
 import { hasSeenWelcome } from "@/features/onboarding/seen";
 import { useCurrentPosition } from "@/features/map/use-current-position";
-import { useMapView, useMapViewHydrated } from "@/features/map/map-store";
+import {
+  useMapView,
+  useMapViewHydrated,
+  type ViewMode,
+} from "@/features/map/map-store";
 import { FETCH_LIMIT, MIN_QUERY_ZOOM, OFFICE } from "@/features/map/config";
 import { metersBetween } from "@/features/map/geo";
 import type { Category } from "@/lib/categories";
@@ -83,9 +87,6 @@ const MENU = [
 ] as const;
 
 type Position = ReturnType<typeof useCurrentPosition>;
-
-/** 지도 / 리스트. **첫 진입은 리스트다** (2026-08-11 요청) */
-type ViewMode = "list" | "map";
 
 /**
  * 보기 전환. 지도 **왼쪽 위** — 오른쪽 위는 이미 [◎][🔍][+] 로 차 있고,
@@ -360,9 +361,15 @@ function NearbyList({
 export function MainView() {
   useFirstRunWelcome();
   const position = useCurrentPosition();
-  // **첫 진입은 리스트다.** 새로고침할 때마다 리스트로 돌아온다 — 저장하지
-  // 않는 게 요청 그대로다 ("최초에는 리스트뷰").
-  const [view, setView] = useState<ViewMode>("list");
+  /**
+   * 지도 / 리스트. **탭을 새로 열면 리스트, 새로고침하면 보던 쪽** (2026-08-11).
+   *
+   * 처음엔 안 저장했는데, 지도를 보다 새로고침하면 리스트로 튕겨서 보고 있던
+   * 자리를 잃었다. 저장소가 sessionStorage 라 탭을 새로 열면 다시 리스트고,
+   * 그래서 "최초에는 리스트뷰" 는 그대로 산다 (map-store).
+   */
+  const view = useMapView((s) => s.view);
+  const setViewMode = useMapView((s) => s.setViewMode);
   /**
    * 등록 화면의 핀 조정 단계에서는 **무조건 지도다** (SHELL.md §4).
    *
@@ -502,7 +509,7 @@ export function MainView() {
 
       {/* 왼쪽 위 = 무엇으로 볼지. 오른쪽(무엇을 할지)과 층을 나눈다.
           핀을 맞추는 동안에는 감춘다 — 눌러도 안 바뀌는 버튼을 두지 않는다. */}
-      {!pinning && <ViewToggle value={view} onChange={setView} />}
+      {!pinning && <ViewToggle value={view} onChange={setViewMode} />}
 
       {/* 오른쪽 위 = 무엇을 할지. 아래(필터·카드)와 층을 나눈다.
           평소에는 [+] 하나만 떠 있어서 지도를 거의 안 가린다. */}
