@@ -11,7 +11,7 @@ import { favoredAt } from "@/lib/moods";
 import { reservationUrlError } from "@/lib/reservation";
 import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
-import { categoryWheelVar, type Category } from "@/lib/categories";
+import type { Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
 import { OFFICE, RADIUS_OPTIONS, readToken } from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
@@ -643,12 +643,24 @@ function Roulette({
     const c = size / 2;
     const arc = (2 * Math.PI) / n;
     const rim = readToken("--border");
-    // **칸이 파스텔이라 글자는 어두운 잉크다** (globals.css 의 *-pastel 참고)
-    const ink = readToken("--foreground");
     const hub = readToken("--background");
 
+    /**
+     * 칸은 **브랜드색과 흰색을 번갈아** 칠한다 (2026-08-11 요청).
+     *
+     * 종류마다 다른 색을 주던 것을 접었다. 일곱 색을 한 판에 모으면 쨍하든
+     * 옅든 정신없고, 어차피 무슨 칸인지는 **박아 넣은 이름**이 말한다.
+     * 두 색만 쓰면 판이 조용해지고 앱의 다른 화면과도 같은 옷이 된다.
+     */
+    const brand = readToken("--primary");
+    const plain = readToken("--background");
+    const onBrand = readToken("--primary-foreground");
+    const ink = readToken("--foreground");
+    const isBrand = (i: number) => i % 2 === 0;
+    const fillOf = (i: number) => (isBrand(i) ? brand : plain);
+
     for (let i = 0; i < n; i++) {
-      const fill = readToken(categoryWheelVar(labels[i]));
+      const fill = fillOf(i);
       if (!fill) continue;
       o.beginPath();
       o.fillStyle = fill;
@@ -656,6 +668,23 @@ function Roulette({
       // 12시에서 시작해 시계방향. 바늘이 12시라 칸 번호와 각도가 그대로 맞는다.
       o.arc(c, c, c - 1, arc * i - Math.PI / 2, arc * (i + 1) - Math.PI / 2);
       o.fill();
+    }
+
+    // **같은 색끼리 붙는 자리에만 금을 긋는다.** 칸이 홀수면 한 바퀴 돌아
+    // 만나는 곳에서 브랜드색 둘이 맞붙어 한 칸처럼 보인다 (지금 종류는 일곱이다).
+    // 색이 다른 경계는 그 자체가 금이라 그을 이유가 없다.
+    for (let i = 0; i < n; i++) {
+      const next = (i + 1) % n;
+      if (fillOf(i) !== fillOf(next)) continue;
+      const line = isBrand(i) ? onBrand : rim;
+      if (!line) continue;
+      const a = arc * next - Math.PI / 2;
+      o.beginPath();
+      o.strokeStyle = line;
+      o.lineWidth = 1;
+      o.moveTo(c, c);
+      o.lineTo(c + Math.cos(a) * (c - 1), c + Math.sin(a) * (c - 1));
+      o.stroke();
     }
 
     // 칸 이름을 부챗살 방향으로 박는다. 없으면 색 조각만 도는 것으로 보인다.
@@ -666,12 +695,13 @@ function Roulette({
     const family = readToken("--font-sans") ?? "";
     // 칸이 많아질수록 글자를 줄인다. 안 줄이면 이웃 칸 글자와 겹친다.
     const px = rem * rootPx * (n > 9 ? 0.86 : 1);
-    if (Number.isFinite(px) && ink) {
+    if (Number.isFinite(px) && ink && onBrand) {
       o.font = `600 ${px}px ${family}`;
-      o.fillStyle = ink;
       o.textAlign = "center";
       o.textBaseline = "middle";
       for (let i = 0; i < n; i++) {
+        // 칸에 따라 글자색이 뒤집힌다. 브랜드색 위에는 흰 글자가 5.1:1 이다.
+        o.fillStyle = isBrand(i) ? onBrand : ink;
         const a = arc * i + arc / 2 - Math.PI / 2;
         const r = c * 0.62; // 테두리와 가운데 사이. 이름이 가장 잘 놓이는 자리
         // **위아래를 따로 뒤집지 않는다.** 판이 통째로 도는 그림이라 판
