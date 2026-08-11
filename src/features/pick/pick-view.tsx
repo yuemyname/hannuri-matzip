@@ -140,10 +140,42 @@ export function PickView() {
    * 그건 "이게 나왔다" 로 읽힌다 — 실제로는 아무것도 안 나온 것이다.
    */
   const reduceMotion = useReducedMotion();
-  const shuffling = useShuffle(
-    pick.isSuccess && result !== null ? pick.submittedAt : null,
-    reduceMotion,
-  );
+
+  /**
+   * 연출이 끝났는가. **누르는 순간 곧바로 false 가 된다.**
+   *
+   * 예전에는 응답을 받은 뒤 이펙트에서 켰다. 그 사이에 `isPending` 은 이미
+   * false 인데 연출 플래그는 아직 false 인 **한 렌더**가 생겨서, 룰렛이 통째로
+   * 사라졌다 다시 붙었다 — 새로 붙은 판은 인라인 스타일이 없으니 등속 회전이
+   * 꺼진 채로 시작했다. 그래서 응답이 빠를 때(=대부분) 판이 1초간 **가만히
+   * 서 있다가** 갑자기 감속만 하고 멎었다. "안 돌아간다 / 뚝 끊긴다" 가 이것이다.
+   *
+   * 상태를 렌더 중에 세우면 그 틈이 아예 없다.
+   */
+  const [revealed, setRevealed] = useState(true);
+  const shuffling = !revealed;
+
+  // 연출이 끝나는 시각을 예약한다. 남은 시간은 **누른 시각**에서 잰다 —
+  // 응답이 빨랐으면 등속 구간이 아직 남아 있고, 늦었으면 이미 지나갔다.
+  useEffect(() => {
+    if (!pick.isSuccess) return;
+    // 뽑을 게 없었으면 연출할 것도 없다. 멈출 칸이 없는데 돌면 아무 칸에나 선다.
+    if (result === null) {
+      setRevealed(true);
+      return;
+    }
+    const wait = reduceMotion
+      ? 0
+      : Math.max(0, pick.submittedAt + SPIN_MIN_MS - Date.now());
+    const total = reduceMotion ? HOLD_MS : wait + LANDING_MS + HOLD_MS;
+    const t = setTimeout(() => setRevealed(true), total);
+    return () => clearTimeout(t);
+  }, [pick.isSuccess, pick.submittedAt, result, reduceMotion]);
+
+  // 못 뽑았으면 연출을 붙잡고 있을 이유가 없다
+  useEffect(() => {
+    if (pick.isError) setRevealed(true);
+  }, [pick.isError]);
 
   /**
    * 판에 그릴 칸. 종류 목록 그대로지만, **뽑힌 종류는 반드시 들어 있어야 한다** —
@@ -193,9 +225,15 @@ export function PickView() {
     router.back();
   };
 
+  /** 뽑기 시작. **연출 시작을 렌더 중에 세운다** (위 revealed 주석 참고) */
+  const draw = () => {
+    setRevealed(false);
+    pick.mutate();
+  };
+
   const again = async () => {
     if (logId) await answerPick(logId, false);
-    pick.mutate();
+    draw();
   };
 
   return (
@@ -313,7 +351,7 @@ export function PickView() {
             **[다시 뽑기] 는 여기 하나뿐이다.** 결과 카드 안에도 두면 같은 이름의
             버튼이 둘이 되어 어느 쪽인지 헷갈린다. */}
         <Button
-          onClick={() => (hasResult ? void again() : pick.mutate())}
+          onClick={() => (hasResult ? void again() : draw())}
           disabled={pick.isPending || shuffling}
         >
           {pick.isPending || shuffling
@@ -335,7 +373,11 @@ export function PickView() {
           <Roulette
             labels={wheelLabels}
             targetIndex={
-              shuffling && result ? wheelLabels.indexOf(result.category) : null
+              // **이번 응답이 온 뒤에만** 칸을 정한다. 다시 뽑는 동안에는
+              // `result` 에 직전 결과가 남아 있어서, 그걸 보면 누르자마자 선다.
+              pick.isSuccess && result
+                ? wheelLabels.indexOf(result.category)
+                : null
             }
             spinStartedAt={pick.submittedAt}
             reduce={reduceMotion}
@@ -425,40 +467,6 @@ function Conditions({
       )}
     </section>
   );
-}
-
-/**
- * 연출이 도는 동안 true. 그 사이 결과 카드를 감춘다.
- *
- * **결과는 이미 손에 있다.** 애니메이션이 결과를 정하지 않는다 —
- * 네트워크가 느려도 도는 도중 값이 바뀌지 않는 이유가 이것이다 (WBS 4.3 DoD).
- *
- * 남은 시간은 **누른 시각**에서 잰다 (`startedAt`). 응답이 빨랐으면 등속 구간이
- * 아직 남아 있고, 늦었으면 그 구간은 이미 지나갔다.
- *
- * `prefers-reduced-motion` 이면 **돌리지 않고 답 위에 세워 둔다.** 예전엔 연출을
- * 통째로 건너뛰었는데, 그러면 판이 한 번 번쩍이고 사라져서 오히려 어수선하다.
- * 움직임 없이 선 자리를 잠깐 보여주는 쪽이 요청(움직임 줄이기)에도 맞고
- * 화면도 조용하다.
- */
-function useShuffle(startedAt: number | null, reduce: boolean) {
-  const [running, setRunning] = useState(false);
-  const last = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (startedAt === null || startedAt === last.current) return;
-    last.current = startedAt;
-
-    setRunning(true);
-    const wait = reduce
-      ? 0
-      : Math.max(0, startedAt + SPIN_MIN_MS - Date.now());
-    const total = reduce ? HOLD_MS : wait + LANDING_MS + HOLD_MS;
-    const t = setTimeout(() => setRunning(false), total);
-    return () => clearTimeout(t);
-  }, [startedAt, reduce]);
-
-  return running;
 }
 
 /**
@@ -580,7 +588,7 @@ function Roulette({
     // 리플로우. 이게 없으면 브라우저가 위 두 줄과 아래를 한 번에 묶어 버려서
     // 트랜지션이 아예 안 걸린다.
     void cv.offsetWidth;
-    cv.style.transition = `transform ${LANDING_MS}ms var(--ease-out-soft)`;
+    cv.style.transition = `transform ${LANDING_MS}ms var(--ease-roulette)`;
     cv.style.transform = `rotate(${to}deg)`;
   };
 
