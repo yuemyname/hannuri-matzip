@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { PlaceCandidate } from "@/lib/naver/local-search";
 
@@ -64,4 +65,19 @@ export function usePlaceSearch(query: string, areas: string[]) {
     staleTime: 5 * 60_000,
     retry: false,
   });
+}
+
+/**
+ * 타이핑이 멎을 때까지 기다렸다가 값을 넘긴다.
+ *
+ * **검색 화면 두 곳이 같이 쓴다** (등록 폼, [검색]). 글자마다 부르면 하루 쿼터가
+ * 금방 닳고, 두 곳이 다른 간격을 쓰면 한쪽만 굼떠 보인다.
+ */
+export function useDebouncedValue(value: string, ms: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Distance } from "@/components/distance";
 import { CategoryChip } from "@/components/category-chip";
 import { categoryFromNaver, matchCategory, type Category } from "@/lib/categories";
@@ -12,8 +13,10 @@ import { useCurrentPosition } from "@/features/map/use-current-position";
 import { areaNamesOf } from "@/features/map/reverse-geocode";
 import {
   usePlaceSearch,
+  useDebouncedValue,
   type PlaceCandidate,
 } from "@/features/restaurants/use-place-search";
+import { useHoldHeight } from "@/components/use-hold-height";
 import { createRestaurant, DuplicateRestaurantError } from "@/features/restaurants/create";
 import { fetchRegisteredNearby, placeKey } from "./api";
 import { RestaurantCard } from "@/features/restaurants/restaurant-card";
@@ -47,6 +50,20 @@ export function DiscoverView() {
   const categoryList = useCategories();
   /** null 이면 "맛집" 으로 두루 찾는다. 고르면 그 종류로 좁힌다 */
   const [category, setCategory] = useState<Category | null>(null);
+  /** 직접 친 검색어. 이게 있으면 종류 칩보다 이쪽이 이긴다 */
+  const [typed, setTyped] = useState("");
+  const debounced = useDebouncedValue(typed.trim(), 400);
+
+  /**
+   * 무엇으로 찾을지. **한 번에 하나만 산다.**
+   *
+   * 칩과 입력칸 둘 다에서 값이 나오면 무엇으로 찾았는지 화면만 봐서는 알 수 없다.
+   * 그래서 치면 칩이 풀리고, 칩을 누르면 칸이 비워진다 (등록 폼의 종류 직접
+   * 입력과 같은 규칙이다).
+   *
+   * 두 글자 미만은 안 보낸다 — 한 글자로는 쓸 만한 결과가 안 나오고 쿼터만 쓴다.
+   */
+  const query = debounced.length >= 2 ? debounced : (category ?? "맛집");
 
   const { data: areas = EMPTY } = useQuery({
     queryKey: ["area", here.lat.toFixed(3), here.lng.toFixed(3)],
@@ -63,15 +80,19 @@ export function DiscoverView() {
     staleTime: 60_000,
   });
 
-  const search = usePlaceSearch(category ?? "맛집", areas);
+  const search = usePlaceSearch(query, areas);
 
-  /** 맨 위에 얹는 우리 것. 가까운 순으로 넷까지 (아래 주석 참고) */
+  // 다시 찾는 동안 결과 상자 높이를 붙잡는다. 안 그러면 시트가 내려앉았다 올라온다
+  // (등록 폼에서 이미 한 번 겪었다 — use-hold-height.ts).
+  const hold = useHoldHeight(search.isFetching);
+
+  /** 맨 위에 얹는 우리 것. 가까운 순으로 목록의 ¾ 까지 (아래 주석 참고) */
   const mine = useMemo(
     () => (registered.data ?? []).slice(0, MINE_MAX),
     [registered.data],
   );
 
-  const candidates = useMemo(() => {
+  const allCandidates = useMemo(() => {
     // **자르기 전 전체**로 거른다. 넷만 보고 거르면 다섯 번째로 가까운 등록분이
     // 네이버 후보로 또 뜨고, 눌러도 인덱스가 막는다.
     const known = new Set(
@@ -82,6 +103,12 @@ export function DiscoverView() {
       .sort((a, b) => distanceM(here, a) - distanceM(here, b));
   }, [search.data, registered.data, here]);
 
+  /** 우리 것이 차지하고 남은 자리를 네이버가 가져간다 */
+  const candidates = useMemo(
+    () => allCandidates.slice(0, Math.max(LIST_MAX - mine.length, 0)),
+    [allCandidates, mine.length],
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <p className="text-caption text-muted-foreground">
@@ -90,15 +117,38 @@ export function DiscoverView() {
         때문에 좋은 집인지는 앱이 모릅니다
       </p>
 
+      <label className="flex flex-col gap-1.5">
+        <span className="text-label font-medium">가게 이름으로 찾기</span>
+        <Input
+          value={typed}
+          onChange={(e) => {
+            setTyped(e.target.value);
+            // 치기 시작하면 칩은 풀린다. 둘이 동시에 살아 있으면 안 된다.
+            if (e.target.value.trim().length > 0) setCategory(null);
+          }}
+          placeholder="쌀국수, 김밥천국"
+          enterKeyHint="search"
+          aria-describedby="discover-query"
+        />
+        <span id="discover-query" className="text-caption text-muted-foreground">
+          {debounced.length >= 2
+            ? `"${debounced}" 로 찾는 중이에요`
+            : "두 글자부터 찾아요. 비워 두면 아래 종류로 찾아요"}
+        </span>
+      </label>
+
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-label font-medium">무엇을 찾을까요</legend>
+        <legend className="text-label font-medium">종류로 찾기</legend>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            aria-pressed={category === null}
-            onClick={() => setCategory(null)}
+            aria-pressed={category === null && debounced.length < 2}
+            onClick={() => {
+              setTyped("");
+              setCategory(null);
+            }}
             className={`inline-flex shrink-0 items-center rounded-chip px-3 py-1.5 text-label transition-colors ${
-              category === null
+              category === null && debounced.length < 2
                 ? "bg-primary text-primary-foreground"
                 : "border border-border bg-background text-foreground hover:bg-muted"
             }`}
@@ -110,12 +160,17 @@ export function DiscoverView() {
               key={c}
               category={c}
               selected={category === c}
-              onToggle={(v) => setCategory(category === v ? null : v)}
+              onToggle={(v) => {
+                // 칩을 누르면 친 글자는 비운다 (한 번에 하나만 산다)
+                setTyped("");
+                setCategory(category === v ? null : v);
+              }}
             />
           ))}
         </div>
       </fieldset>
 
+      <div ref={hold.ref} style={hold.style} className="flex flex-col gap-4">
       {search.isFetching && (
         <p className="text-caption text-muted-foreground">찾는 중</p>
       )}
@@ -158,8 +213,10 @@ export function DiscoverView() {
         // 빈 상태는 행동 유도 (CLAUDE.md). 여기서는 "다른 종류를 눌러 보라" 가 답이다.
         <p role="status" className="text-caption text-muted-foreground">
           {(search.data?.places ?? []).length > 0
-            ? "찾은 곳이 전부 이미 등록돼 있어요. 다른 종류를 눌러 보세요"
-            : "이 근처에서는 못 찾았어요. 지도를 옮기거나 다른 종류를 눌러 보세요"}
+            ? "찾은 곳이 전부 이미 등록돼 있어요. 다른 이름이나 종류로 찾아보세요"
+            : debounced.length >= 2
+              ? `"${debounced}" 로는 이 근처에서 못 찾았어요. 이름을 줄여 보거나 지도를 옮겨 보세요`
+              : "이 근처에서는 못 찾았어요. 지도를 옮기거나 다른 종류를 눌러 보세요"}
         </p>
       )}
 
@@ -184,6 +241,14 @@ export function DiscoverView() {
           ))}
         </ul>
       )}
+
+      {allCandidates.length > candidates.length && (
+        <p className="text-caption text-muted-foreground">
+          네이버에서 {allCandidates.length}곳을 찾았고 {candidates.length}곳만
+          보여줘요. 이름으로 찾으면 좁힐 수 있어요
+        </p>
+      )}
+      </div>
     </div>
   );
 }
@@ -191,12 +256,17 @@ export function DiscoverView() {
 const EMPTY: string[] = [];
 
 /**
- * 맨 위에 얹는 "내 지도에 있는 곳" 최대 개수.
+ * 목록 전체 길이와, 그중 **내 지도에 있는 곳의 몫** (2026-08-10 정정).
  *
- * 이 화면의 일은 **채우는 것**이라 우리 것은 맥락일 뿐이다. 많이 얹으면 담을
- * 것을 보러 와서 이미 담은 것만 스크롤하게 된다. 넘치는 만큼은 지도에서 본다.
+ * 처음에 「우리 것은 맥락일 뿐」이라고 읽고 넷으로 잘랐는데, 반대였다 —
+ * **우리 것이 주인공이고 네이버가 빈자리를 메운다.** 열두 줄 중 아홉(¾)까지가
+ * 우리 것이고, 남는 자리를 네이버가 가져간다. 등록분이 아홉에 못 미치면 그만큼
+ * 네이버 쪽이 길어진다 (지금이 그 상태다).
+ *
+ * 둘 다 넘치면 감춘 개수를 화면에 적는다 — 조용히 자르지 않는다 (CLAUDE.md).
  */
-const MINE_MAX = 4;
+const LIST_MAX = 12;
+const MINE_MAX = Math.floor((LIST_MAX * 3) / 4); // 9
 
 function CandidateRow({
   place: p,
