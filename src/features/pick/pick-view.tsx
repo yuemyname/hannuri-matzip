@@ -643,7 +643,7 @@ function Roulette({
     const c = size / 2;
     const arc = (2 * Math.PI) / n;
     const rim = readToken("--border");
-    // **칸이 밝아졌으니 글자는 어두운 잉크다** (globals.css 의 *-vivid 참고)
+    // **칸이 파스텔이라 글자는 어두운 잉크다** (globals.css 의 *-pastel 참고)
     const ink = readToken("--foreground");
     const hub = readToken("--background");
 

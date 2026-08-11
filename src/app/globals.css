@@ -57,18 +57,22 @@
   --color-warning: #B4700F;
   --color-danger:  #A81B1B; /* 브랜드 오렌지와 헷갈리므로 항상 텍스트 라벨 병기 */
 
-  /* 점메추 룰렛 칸 — 위 카테고리 색의 **밝은 형제**.
-     칩은 흰 글자를 얹어야 해서 어두운 쪽으로 잡았는데, 그 일곱 개를 한 판에
-     모아 놓으면 탁한 파이가 된다. 판에서는 글자를 어두운 잉크로 쓰고 칸을
-     밝게 칠한다 — 색상 계열이 같아서 "이 색이 그 종류" 는 그대로 읽힌다.
-     전부 --foreground(#2B2725) 대비 4.5:1 이상이다. */
-  --color-cat-korean-vivid:   #F4633D; /* 4.7:1 */
-  --color-cat-chinese-vivid:  #F0A81E; /* 7.3:1 */
-  --color-cat-japanese-vivid: #35AED6; /* 5.8:1 */
-  --color-cat-western-vivid:  #AE8BF0; /* 5.5:1 */
-  --color-cat-snack-vivid:    #33CE89; /* 7.3:1 */
-  --color-cat-cafe-vivid:     #D89A5B; /* 6.1:1 */
-  --color-cat-etc-vivid:      #ADA49B; /* 6.0:1 */
+  /* 점메추 룰렛 칸 — 아래 카테고리 색의 **파스텔 형제** (2026-08-11).
+     칩 색은 흰 글자를 얹어야 해서 어둡게 잡은 것이라, 일곱을 한 판에 모으면
+     탁한 파이가 된다. 판에서는 글자를 어두운 잉크로 쓰고 칸을 옅게 칠한다 —
+     색상(H)은 칩과 같아서 "이 색이 그 종류" 는 그대로 읽힌다.
+     전부 --foreground(#2B2725) 대비 6.9:1 이상이다.
+
+     파스텔은 서로 가까워지기 쉬워서 색상을 일부러 벌려 놨다. 특히 「기타」는
+     칩에서는 따뜻한 회색인데 여기서는 **차가운 회색**이다 — 안 그러면 한식·
+     카페와 뭉친다. 그래도 칸을 가르는 건 색이 아니라 **박아 넣은 이름**이다. */
+  --color-cat-korean-pastel:   #F39E91; /*  7.1:1  살구 */
+  --color-cat-chinese-pastel:  #F4D47B; /* 10.2:1  버터 */
+  --color-cat-japanese-pastel: #90CCEA; /*  8.5:1  하늘 */
+  --color-cat-western-pastel:  #CBB5EE; /*  8.0:1  라벤더 */
+  --color-cat-snack-pastel:    #9ADFBD; /*  9.6:1  민트 */
+  --color-cat-cafe-pastel:     #D8A883; /*  6.9:1  밀크티 */
+  --color-cat-etc-pastel:      #C4CBD4; /*  9.0:1  회색 */
 
   /* Category chip — 7종 (SPEC §2.1 category) */
   --color-cat-korean:  #C93A18;
