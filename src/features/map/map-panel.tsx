@@ -37,7 +37,6 @@ export function MapPanel({
     center: geoCenter,
     isFallback,
     lowAccuracy,
-    request,
   } = position;
   const center = useMapView((s) => s.center);
   const zoom = useMapView((s) => s.zoom);
@@ -72,21 +71,15 @@ export function MapPanel({
 
   // 카메라를 옮길지 말지. 저장된 뷰가 있으면 위치를 얻어도 함부로 옮기지 않는다 —
   // 그러면 돌아올 때마다 내 위치로 튕겨서 복원이 무의미해진다.
-  const askedRef = useRef(false);
+  //
+  // **사용자가 "내 위치로 가자" 고 말하는 창구는 [◎] 하나뿐이다** (2026-08-11).
+  // 그쪽은 스스로 `requestFlyTo` 로 명령을 보내므로 여기서는 첫 방문만 본다.
   const [focus, setFocus] = useState<LatLng | null>(null);
 
   useEffect(() => {
-    if (!coords) return;
-    if (askedRef.current || center === null) {
-      setFocus({ lat: coords.lat, lng: coords.lng });
-      askedRef.current = false;
-    }
+    if (!coords || center !== null) return;
+    setFocus({ lat: coords.lat, lng: coords.lng });
   }, [coords, center]);
-
-  const handleRequest = () => {
-    askedRef.current = true;
-    request();
-  };
 
   const handleSelect = (id: string) => onSelect(id, "map");
 
@@ -182,29 +175,40 @@ export function MapPanel({
 
       {/* 배너는 지도 위에 겹친다. 지도 조작을 막지 않도록 바깥은 클릭을 통과시킨다.
           여기는 **위치** 문제만 말한다. 조회 실패·빈 결과는 하단 바가 맡는다 —
-          같은 말을 두 군데서 하지 않는다. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-3">
+          같은 말을 두 군데서 하지 않는다.
+
+          **위아래·좌우로 자리를 비켜 준다.** 위 왼쪽에는 보기 전환이, 오른쪽에는
+          [◎][🔍][+] 가 세로로 서 있다. 안 비키면 배너가 그 밑으로 들어가 양쪽이
+          잘린 채로 읽힌다 (2026-08-11 에 실제로 그랬다). 위로는 전환 버튼 높이만큼,
+          오른쪽으로는 버튼 한 칸만큼 밀어 둔다. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-3 pt-[4.25rem] pr-[4.5rem]">
         <Notice
           status={status}
           isFallback={isFallback}
           lowAccuracy={lowAccuracy}
-          onRequest={handleRequest}
         />
       </div>
     </div>
   );
 }
 
+/**
+ * 위치 상태 알림.
+ *
+ * **버튼이 없다** (2026-08-11). 예전에는 여기 [내 주변 찾기]·[다시 시도] 가
+ * 붙어 있었는데, 오른쪽 위 [◎] 가 정확히 같은 일을 한다 — 위치를 아직 못
+ * 얻었으면 물어보고, 얻었으면 지도를 그리로 옮긴다. 같은 일을 하는 버튼이
+ * 둘이면 어느 쪽이 무엇인지 매번 생각하게 되므로 [◎] 하나로 합쳤다.
+ * 여기는 **왜 이렇게 보이는지**만 말한다.
+ */
 function Notice({
   status,
   isFallback,
   lowAccuracy,
-  onRequest,
 }: {
   status: ReturnType<typeof useCurrentPosition>["status"];
   isFallback: boolean;
   lowAccuracy: boolean;
-  onRequest: () => void;
 }) {
   if (status === "prompting") {
     return <Bubble>위치 확인 중</Bubble>;
@@ -225,15 +229,8 @@ function Notice({
     );
   }
 
-  // 첫 진입. iOS Safari 때문에 자동 호출 대신 버튼으로 트리거한다 (SPEC §5)
-  if (status === "idle") {
-    return (
-      <Bubble>
-        <Action onClick={onRequest}>내 주변 찾기</Action>
-      </Bubble>
-    );
-  }
-
+  // 첫 진입에는 아무 말도 안 한다. 아직 아무 일도 안 일어났고, 위치를 원하면
+  // [◎] 를 누르면 된다 (iOS Safari 때문에 자동 호출은 안 한다 — SPEC §5).
   // denied / timeout / unavailable 은 같은 처리 (SPEC §5)
   if (isFallback) {
     return (
@@ -252,8 +249,12 @@ function Notice({
                 : "브라우저 설정에서 이 사이트의 위치 권한을 허용해 주세요"}
             </span>
           )}
+          {/* 고친 다음에 무엇을 누를지 적어 준다. 버튼을 [◎] 로 합쳤으므로
+              여기서는 그 자리를 가리키기만 한다. */}
+          <span className="text-caption text-muted-foreground">
+            위치를 켠 뒤 오른쪽 위 ◎ 를 눌러 주세요
+          </span>
         </span>
-        <Action onClick={onRequest}>다시 시도</Action>
       </Bubble>
     );
   }
@@ -285,23 +286,5 @@ function Bubble({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
-  );
-}
-
-function Action({
-  onClick,
-  children,
-}: {
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="shrink-0 rounded-chip px-2 py-0.5 font-medium text-brand-700 hover:bg-accent"
-    >
-      {children}
-    </button>
   );
 }

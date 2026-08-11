@@ -14,9 +14,11 @@ import type { Category } from "@/lib/categories";
  * 아래에 붙은 바가 아니라 플로팅이다. 바로 두면 그만큼 지도가 잘리는데,
  * 컨트롤은 화면의 아래 몇 십 픽셀만 쓰면 되고 그 뒤의 지도는 계속 보이는 게 낫다.
  *
- * 떠 있으므로 **배경과 그림자가 필수다.** 지도 타일 위에 투명한 글자를 얹으면
- * 지도 색에 따라 읽히다 말다 한다. 지도 위 배너(`MapPanel`)와 같은 옷을 입힌다 —
- * `bg-background` + `border` + `shadow-pop`.
+ * 떠 있으므로 **불투명한 배경이 필수다.** 지도 타일 위에 투명한 글자를 얹으면
+ * 지도 색에 따라 읽히다 말다 한다. 다만 옷은 `bg-background` + `border` 1px 이다 —
+ * 그림자는 뺐다 (2026-08-11). 칩 여섯 개가 나란히 서면 각자의 흐린 그림자가
+ * 이어져 줄 아래 옅은 회색 띠처럼 보였다. 그림자 대신 테두리가 이 앱의 기본이다
+ * (CLAUDE.md).
  *
  * 포인터 이벤트는 **컨트롤 자신만** 받는다. 감싸는 층이 이벤트를 먹으면
  * 지도 아래쪽을 손가락으로 끌 수 없게 된다.
@@ -113,7 +115,6 @@ export function MapControls({
                   selected={categories.includes(c)}
                   onToggle={onToggleCategory}
                   count={categoryCounts.get(c) ?? 0}
-                  className="shadow-pop"
                 />
               ))}
               <button
@@ -143,7 +144,7 @@ export function MapControls({
 
 /** 칩 공통 옷. CategoryChip 은 카테고리 색을 쓰지만 이쪽은 중립이다 */
 function chip(active: boolean) {
-  return `inline-flex shrink-0 items-center gap-1 rounded-chip px-3 py-1.5 text-label shadow-pop ${
+  return `inline-flex shrink-0 items-center gap-1 rounded-chip px-3 py-1.5 text-label ${
     active
       ? "bg-primary text-primary-foreground"
       : "border border-border bg-background text-foreground hover:bg-muted"

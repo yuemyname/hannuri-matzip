@@ -228,7 +228,9 @@ function MapActions({ position }: { position: Position }) {
           [내 주변 찾기] 뿐이었는데, 그건 위치를 한 번 얻으면 사라져서 그 뒤로는
           지도를 되돌릴 방법이 없었다. 지도를 끌고 다니다 원래 자리로 오는 건
           한 번이 아니라 계속 하는 일이다. */}
-      <div className="flex items-center gap-2">
+      {/* **세로로 쌓는다** (2026-08-11 요청). 가로로 세 개면 오른쪽 위가 화면 폭의
+          절반을 먹어서 그 아래 지도가 통째로 가려졌다. */}
+      <div className="flex flex-col items-end gap-2">
         <LocateButton position={position} />
         {/* [검색] 은 메뉴 안이 아니라 밖에 둔다 (2026-08-10). 처음 텅 빈 지도를
             채우는 길이라 제일 자주 눌리는데, 한 겹 접혀 있으면 안 찾는다. */}
