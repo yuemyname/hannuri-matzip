@@ -1,18 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Rating } from "@/components/rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { signedPhotoUrls } from "@/features/reviews/api";
 import { ReviewForm } from "@/features/reviews/review-form";
 import { MenuEditor } from "./menu-editor";
-import { useCurrentUserId, useRestaurantDetail } from "./use-detail";
+import { detailKey, useCurrentUserId, useRestaurantDetail } from "./use-detail";
 import { PRICE_LABEL } from "./price";
-import { reservationUrlError } from "@/lib/reservation";
-import type { RestaurantDetail, Review } from "./detail-api";
+import {
+  normalizeReservationUrl,
+  reservationUrlError,
+  RESERVATION_URL_MAX_LEN,
+} from "@/lib/reservation";
+import { saveReservation, type RestaurantDetail, type Review } from "./detail-api";
 
 /**
  * 맛집 상세 (SPEC §4.3). 인터셉트 모달과 풀페이지 fallback 이 이 컴포넌트 하나를 쓴다.
@@ -52,6 +58,12 @@ export function RestaurantDetailView({ id }: { id: string }) {
   const mine = data.reviews.find((v) => v.userId === userId) ?? null;
   const others = data.reviews.filter((v) => v.userId !== userId);
 
+  // 예약 정보는 **등록한 사람만** 고칠 수 있다. RLS 가 그렇게 돼 있어서
+  // (`restaurants_update`: `created_by = auth.uid()`), 남에게 칸을 보여줘 봐야
+  // 눌렀을 때 0행이 바뀌고 끝난다. 아예 안 보여준다.
+  const owned =
+    data.createdBy !== null && userId !== null && data.createdBy === userId;
+
   if (writing) {
     return (
       <div className="flex flex-col gap-4">
@@ -82,6 +94,8 @@ export function RestaurantDetailView({ id }: { id: string }) {
             이미 다 적혀 있다. */}
         <Rating value={data.avgRating} count={data.reviewCount} />
       </section>
+
+      <Reservation data={data} canEdit={owned} />
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
@@ -153,12 +167,25 @@ export function RestaurantDetailView({ id }: { id: string }) {
   );
 }
 
-function Header({ data }: { data: RestaurantDetail }) {
-  const price = data.priceRange === null ? null : PRICE_LABEL[data.priceRange];
-  // 네이버 지도 딥링크 (SPEC §4.3). 등록된 플레이스 URL 이 있으면 그쪽이 정확하다.
-  const naverUrl =
-    data.naverPlaceUrl ??
-    `https://map.naver.com/p/search/${encodeURIComponent(data.name)}`;
+/**
+ * 예약 (2026-08-11). **한 칸으로 따로 뺐다.**
+ *
+ * 예전엔 제목 아래에 예약을 켠 곳만 조용히 버튼이 붙었다. 그래서 "예약하기가
+ * 어디 있냐" 가 나왔다 — 켠 집이 하나도 없었으니 화면 어디에도 그 글자가 없었던
+ * 것이다. 이제 이 칸은 **항상 있고**, 비어 있으면 비었다고 적는다. 등록한
+ * 사람에게는 그 자리에서 켜는 버튼이 보인다.
+ */
+function Reservation({
+  data,
+  canEdit,
+}: {
+  data: RestaurantDetail;
+  canEdit: boolean;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [reservable, setReservable] = useState(data.reservable);
+  const [url, setUrl] = useState(data.reservationUrl ?? "");
 
   // **href 로 쓰기 전에 한 번 더 본다.** DB 제약이 막고 있지만, 그 제약보다 먼저
   // 들어간 값이나 제약을 지나지 않는 경로가 생기면 여기가 마지막 문이다.
@@ -167,6 +194,145 @@ function Header({ data }: { data: RestaurantDetail }) {
     data.reservationUrl && reservationUrlError(data.reservationUrl) === null
       ? data.reservationUrl
       : null;
+
+  const problem = reservable ? reservationUrlError(url) : null;
+
+  const save = useMutation({
+    mutationFn: () =>
+      saveReservation(data.id, {
+        reservable,
+        // 예약을 끄면 링크도 지운다. 남겨 두면 다시 켰을 때 옛 링크가 되살아난다.
+        reservationUrl: reservable ? normalizeReservationUrl(url) : null,
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: detailKey(data.id) });
+      // 목록 카드에도 예약 표시가 붙는다.
+      void qc.invalidateQueries({ queryKey: ["restaurants"] });
+      void qc.invalidateQueries({ queryKey: ["discover"] });
+      setEditing(false);
+    },
+  });
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-label font-medium">예약</h4>
+        {canEdit && !editing && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setReservable(data.reservable);
+              setUrl(data.reservationUrl ?? "");
+              save.reset();
+              setEditing(true);
+            }}
+          >
+            {data.reservable ? "예약 고치기" : "예약 정보 넣기"}
+          </Button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="flex flex-col gap-3">
+          {/* 스위치는 색만으로 켜짐을 말한다. 옆에 글자를 함께 둔다 (CLAUDE.md) */}
+          <div className="flex items-center gap-2">
+            <Switch
+              id="detail-reservable"
+              checked={reservable}
+              onCheckedChange={(v) => setReservable(v === true)}
+            />
+            <label htmlFor="detail-reservable" className="text-body">
+              {reservable ? "예약 받아요" : "예약 안 받아요"}
+            </label>
+          </div>
+
+          {/* 링크는 켠 경우에만 묻는다. 안 받는 집에 링크 칸이 떠 있으면
+              "여기 뭘 넣어야 하나" 를 매번 생각하게 된다. */}
+          {reservable && (
+            <div className="flex flex-col gap-1">
+              <Input
+                type="url"
+                inputMode="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                maxLength={RESERVATION_URL_MAX_LEN}
+                placeholder="https://booking.naver.com/..."
+                aria-label="예약 링크"
+                aria-invalid={problem !== null}
+                aria-describedby="detail-reservation-help"
+              />
+              <p
+                id="detail-reservation-help"
+                className={`text-caption ${
+                  problem ? "text-danger" : "text-muted-foreground"
+                }`}
+              >
+                {problem ?? "전화로만 받으면 비워 두세요"}
+              </p>
+            </div>
+          )}
+
+          {save.isError && (
+            <p role="alert" className="text-caption text-danger">
+              {save.error instanceof Error
+                ? save.error.message
+                : "저장하지 못했어요. 다시 눌러 주세요."}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              disabled={problem !== null || save.isPending}
+              onClick={() => save.mutate()}
+            >
+              {save.isPending ? "저장 중" : "예약 정보 저장"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditing(false)}
+            >
+              취소
+            </Button>
+          </div>
+        </div>
+      ) : data.reservable ? (
+        bookingUrl ? (
+          <a
+            href={bookingUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex self-start items-center rounded-md bg-primary px-4 py-2 text-label text-primary-foreground"
+          >
+            예약하기
+          </a>
+        ) : (
+          // 링크 없이 "예약 가능" 만 띄우면 갈 데가 없어 더 답답하다. 다음 행동을 적는다.
+          <p className="text-caption text-muted-foreground">
+            예약 받는 곳이에요.{" "}
+            {data.phone ? "전화로 물어보세요" : "링크는 아직 없어요"}
+          </p>
+        )
+      ) : (
+        // 빈 상태는 행동 유도 (CLAUDE.md)
+        <p className="text-caption text-muted-foreground">
+          {canEdit
+            ? "예약 받는 곳이면 켜 주세요. 링크도 같이 넣을 수 있어요"
+            : "예약 정보가 아직 없어요. 아신다면 등록한 분에게 알려 주세요"}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function Header({ data }: { data: RestaurantDetail }) {
+  const price = data.priceRange === null ? null : PRICE_LABEL[data.priceRange];
+  // 네이버 지도 딥링크 (SPEC §4.3). 등록된 플레이스 URL 이 있으면 그쪽이 정확하다.
+  const naverUrl =
+    data.naverPlaceUrl ??
+    `https://map.naver.com/p/search/${encodeURIComponent(data.name)}`;
 
   return (
     <header className="flex flex-col gap-2">
@@ -216,24 +382,6 @@ function Header({ data }: { data: RestaurantDetail }) {
           {data.memo}
         </p>
       )}
-
-      {/* 예약 (2026-08-09). 링크가 있으면 버튼, 없으면 사실만 적는다 —
-          "예약 가능" 만 띄워 놓고 갈 데가 없으면 그게 더 답답하다. */}
-      {data.reservable &&
-        (bookingUrl ? (
-          <a
-            href={bookingUrl}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-flex self-start items-center rounded-md bg-primary px-4 py-2 text-label text-primary-foreground"
-          >
-            예약하기
-          </a>
-        ) : (
-          <p className="text-caption text-muted-foreground">
-            예약 받는 곳이에요{data.phone ? ". 전화로 물어보세요" : ""}
-          </p>
-        ))}
 
       <a
         href={naverUrl}

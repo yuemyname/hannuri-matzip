@@ -38,6 +38,8 @@ export type RestaurantDetail = {
   reservable: boolean;
   reservationUrl: string | null;
   naverPlaceUrl: string | null;
+  /** 등록한 사람. 예약 정보를 고칠 수 있는지 판단하는 데 쓴다 (RLS 가 등록자만 허용) */
+  createdBy: string | null;
   menus: Menu[];
   reviews: Review[];
   avgRating: number;
@@ -95,7 +97,7 @@ export async function fetchDetail(
     .from("restaurants")
     .select(
       `id, name, category, address, road_address, price_range, phone, memo, mood_tags,
-       reservable, reservation_url,
+       reservable, reservation_url, created_by,
        naver_place_url, location,
        menus ( id, name, price, is_signature ),
        reviews ( id, user_id, rating, comment, visited_on, created_at,
@@ -151,6 +153,7 @@ export async function fetchDetail(
     reservable: r.reservable === true,
     reservationUrl: str(r.reservation_url),
     naverPlaceUrl: str(r.naver_place_url),
+    createdBy: str(r.created_by),
     menus,
     reviews,
     // 뷰(restaurant_stats)와 같은 규칙으로 반올림한다. 값이 갈리면 리스트와 상세가 달라 보인다.
@@ -159,6 +162,39 @@ export async function fetchDetail(
       : 0,
     reviewCount: reviews.length,
   };
+}
+
+/**
+ * 예약 정보 고치기 (SPEC §4.3).
+ *
+ * **등록한 사람만 된다.** `restaurants_update` 정책이 `created_by = auth.uid()` 라,
+ * 남이 부르면 정책에 걸려 **0행이 바뀌고도 에러가 안 난다.** 그게 제일 나쁜
+ * 결과라 — 저장한 줄 알고 나갔다가 나중에 안 바뀐 걸 본다 — 바뀐 행을 돌려받아
+ * 세어 본다. 0이면 실패로 알린다.
+ *
+ * 화면도 등록자에게만 이 칸을 보여주지만, 그건 눈에 보이는 방어일 뿐이다.
+ */
+export async function saveReservation(
+  restaurantId: string,
+  next: { reservable: boolean; reservationUrl: string | null },
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("supabase 설정이 없다");
+  await ensureSession();
+
+  const { data, error } = await supabase
+    .from("restaurants")
+    .update({
+      reservable: next.reservable,
+      reservation_url: next.reservationUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", restaurantId)
+    .select("id");
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error("등록한 사람만 고칠 수 있어요");
+  }
 }
 
 /** 현재 익명 세션의 user_id. 내 리뷰를 가려내는 데 쓴다 */

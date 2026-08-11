@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Distance } from "@/components/distance";
 import { CategoryChip } from "@/components/category-chip";
 import { categoryFromNaver, matchCategory, type Category } from "@/lib/categories";
@@ -297,6 +298,17 @@ function CandidateRow({
   /** 목록에 없는 이름이면 담기 전에 종류부터 만들어야 한다 */
   const isNew = category !== null && !known.includes(category);
 
+  /**
+   * 예약 받는 곳인지 (2026-08-11 요청).
+   *
+   * **네이버가 알려 주는 값이 아니다.** 지역검색 응답에 예약 여부는 없다 —
+   * 아는 사람이 담으면서 켜 주는 것이다. 그래서 기본값은 꺼짐이고, 여기서는
+   * 켜기만 한다. **링크는 안 묻는다** — 이 화면의 값어치가 "탭 한 번" 이라
+   * 주소를 붙여넣게 하면 그게 사라진다. 링크는 상세에서 넣는다.
+   */
+  const [reservable, setReservable] = useState(false);
+  const switchId = `discover-reservable-${placeKey(p.name, p.lat, p.lng)}`;
+
   const add = useMutation({
     mutationFn: async () => {
       if (isNew) await ensureCategory(category!);
@@ -307,14 +319,14 @@ function CandidateRow({
         roadAddress: p.roadAddress || null,
         lat: p.lat,
         lng: p.lng,
-        // 가격대·메모·태그·예약은 비워 둔다. 아는 사람이 상세에서 채우면 된다 —
+        // 가격대·메모·태그는 비워 둔다. 아는 사람이 상세에서 채우면 된다 —
         // 여기서 물어보면 "탭 한 번" 이라는 이 화면의 값어치가 사라진다.
         priceRange: null,
         phone: p.telephone || null,
         memo: null,
         naverPlaceUrl: p.link || null,
         moodTags: [],
-        reservable: false,
+        reservable,
         reservationUrl: null,
         menus: [],
       });
@@ -362,6 +374,23 @@ function CandidateRow({
             />
           ))}
         </div>
+      )}
+
+      {/* 스위치는 색만으로 켜짐을 말한다. 옆에 글자를 함께 둔다 (CLAUDE.md) */}
+      <div className="flex items-center gap-2">
+        <Switch
+          id={switchId}
+          checked={reservable}
+          onCheckedChange={(v) => setReservable(v === true)}
+        />
+        <label htmlFor={switchId} className="text-caption">
+          {reservable ? "예약 받는 곳이에요" : "예약 받는 곳인가요"}
+        </label>
+      </div>
+      {reservable && (
+        <p className="text-caption text-muted-foreground">
+          예약 링크는 담은 뒤 상세에서 넣어요
+        </p>
       )}
 
       {add.isError && (
