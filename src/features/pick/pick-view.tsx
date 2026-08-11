@@ -89,7 +89,13 @@ export function PickView() {
   const [categories, setCategories] = useState<Category[]>([]);
   const categoryList = useCategories();
   const [maxPrice, setMaxPrice] = useState<number | null>(null);
-  const [excludeRecent, setExcludeRecent] = useState(true);
+  /**
+   * 최근 간 곳 빼기 — **기본은 꺼짐** (2026-08-11 요청).
+   *
+   * 켜 두면 후보가 조용히 줄어든다. 등록된 곳이 몇십 곳뿐인 지금은 그게
+   * "왜 안 나오지" 로만 남는다. 필요한 사람이 켜는 쪽이 맞다.
+   */
+  const [excludeRecent, setExcludeRecent] = useState(false);
 
   /**
    * **매번 전체에서 새로 뽑는다** (2026-08-10, 사용자 결정).
@@ -505,9 +511,11 @@ function useReducedMotion() {
  *
  * **회전도 캔버스 안에서 한다.** 캔버스 요소에 CSS `transform` 을 걸어 돌리면
  * 크로미움에서는 도는데 실기기(iOS Safari)에서는 안 돌았다 — 캔버스가 따로 합성
- * 레이어로 올라가면 변환이 화면에 안 나타나는 경우가 있다. 매 프레임 다시 그리면
- * 그 문제가 아예 없다. 칸 일곱에 글자 일곱을 2.6초 동안 다시 그리는 값이라
- * 비용도 문제가 안 된다.
+ * 레이어로 올라가면 변환이 화면에 안 나타나는 경우가 있다.
+ *
+ * 다만 프레임마다 **처음부터 다시 그리지는 않는다.** 그렇게 했더니 실기기에서
+ * 뚝뚝 끊겼다 — 가변 글꼴 `fillText` 를 초당 400번 넘게 부르는 셈이다. 판은 한
+ * 번만 그려 두고 프레임마다 그 그림을 돌려서 붙인다 (`drawImage` 한 번).
  *
  * 색·글꼴은 **토큰에서 읽어 온다** (`readToken`). 캔버스는 CSS 를 모르니 값을
  * 넘겨야 하는데, 여기에 hex 나 px 를 적으면 토큰 정본이 두 군데가 된다.
@@ -611,8 +619,13 @@ function Roulette({
   }, [n, reduce]);
 
   /**
-   * 칸을 그리는 함수를 만들어 둔다. 색·글꼴은 한 번만 읽고, 프레임마다 하는 일은
-   * 지우고 돌려서 다시 그리는 것뿐이다.
+   * 판을 **한 번만** 그려 두고, 프레임마다 하는 일은 그 그림을 돌려서 붙이는
+   * 것뿐이다.
+   *
+   * 처음엔 프레임마다 부채꼴 일곱 + 글자 일곱을 다시 그렸는데, 실기기에서
+   * 뚝뚝 끊겼다 — 가변 글꼴 `fillText` 를 초당 400번 넘게 부르는 셈이라
+   * 사파리가 못 따라온다. 그림은 회전과 무관하게 늘 같으니 한 장 만들어 두고
+   * `drawImage` 한 번으로 끝낸다.
    */
   useEffect(() => {
     const cv = discRef.current;
@@ -622,9 +635,16 @@ function Roulette({
 
     // 레티나에서 글자가 뭉개지지 않게 실제 픽셀로 키워 그린다.
     const size = cv.clientWidth;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     cv.width = Math.round(size * dpr);
     cv.height = Math.round(size * dpr);
+
+    const off = document.createElement("canvas");
+    off.width = cv.width;
+    off.height = cv.height;
+    const o = off.getContext("2d");
+    if (!o) return;
+    o.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const c = size / 2;
     const arc = (2 * Math.PI) / n;
@@ -632,8 +652,19 @@ function Roulette({
     // **칸이 밝아졌으니 글자는 어두운 잉크다** (globals.css 의 *-vivid 참고)
     const ink = readToken("--foreground");
     const hub = readToken("--background");
-    const fills = labels.map((x) => readToken(categoryWheelVar(x)));
 
+    for (let i = 0; i < n; i++) {
+      const fill = readToken(categoryWheelVar(labels[i]));
+      if (!fill) continue;
+      o.beginPath();
+      o.fillStyle = fill;
+      o.moveTo(c, c);
+      // 12시에서 시작해 시계방향. 바늘이 12시라 칸 번호와 각도가 그대로 맞는다.
+      o.arc(c, c, c - 1, arc * i - Math.PI / 2, arc * (i + 1) - Math.PI / 2);
+      o.fill();
+    }
+
+    // 칸 이름을 부챗살 방향으로 박는다. 없으면 색 조각만 도는 것으로 보인다.
     const rootPx = parseFloat(
       getComputedStyle(document.documentElement).fontSize,
     );
@@ -641,62 +672,50 @@ function Roulette({
     const family = readToken("--font-sans") ?? "";
     // 칸이 많아질수록 글자를 줄인다. 안 줄이면 이웃 칸 글자와 겹친다.
     const px = rem * rootPx * (n > 9 ? 0.86 : 1);
-    const canLabel = Number.isFinite(px) && ink !== undefined;
-
-    drawRef.current = (deg: number) => {
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.clearRect(0, 0, size, size);
-      g.translate(c, c);
-      g.rotate((deg * Math.PI) / 180);
-      g.translate(-c, -c);
-
+    if (Number.isFinite(px) && ink) {
+      o.font = `600 ${px}px ${family}`;
+      o.fillStyle = ink;
+      o.textAlign = "center";
+      o.textBaseline = "middle";
       for (let i = 0; i < n; i++) {
-        const fill = fills[i];
-        if (!fill) continue;
-        g.beginPath();
-        g.fillStyle = fill;
-        g.moveTo(c, c);
-        // 12시에서 시작해 시계방향. 바늘이 12시라 칸 번호와 각도가 그대로 맞는다.
-        g.arc(c, c, c - 1, arc * i - Math.PI / 2, arc * (i + 1) - Math.PI / 2);
-        g.fill();
+        const a = arc * i + arc / 2 - Math.PI / 2;
+        const r = c * 0.62; // 테두리와 가운데 사이. 이름이 가장 잘 놓이는 자리
+        // **위아래를 따로 뒤집지 않는다.** 판이 통째로 도는 그림이라 판
+        // 좌표에서 내린 판단은 돌아간 뒤엔 틀린다. 이대로 두면 착지 회전량이
+        // 정확히 이 각도를 상쇄해서 **바늘에 선 칸은 언제나 똑바로 선다.**
+        // 나머지가 기울어 보이는 건 진짜 룰렛판과 같은 모습이다.
+        o.save();
+        o.translate(c + Math.cos(a) * r, c + Math.sin(a) * r);
+        o.rotate(a + Math.PI / 2);
+        o.fillText(labels[i], 0, 0, c * 0.72);
+        o.restore();
       }
+    }
 
-      // 칸 이름을 부챗살 방향으로 박는다. 없으면 색 조각만 도는 것으로 보인다.
-      if (canLabel) {
-        g.font = `600 ${px}px ${family}`;
-        g.fillStyle = ink!;
-        g.textAlign = "center";
-        g.textBaseline = "middle";
-        for (let i = 0; i < n; i++) {
-          const a = arc * i + arc / 2 - Math.PI / 2;
-          const r = c * 0.62; // 테두리와 가운데 사이. 이름이 가장 잘 놓이는 자리
-          // **위아래를 따로 뒤집지 않는다.** 판이 통째로 도는 그림이라 판
-          // 좌표에서 내린 판단은 돌아간 뒤엔 틀린다. 이대로 두면 착지 회전량이
-          // 정확히 이 각도를 상쇄해서 **바늘에 선 칸은 언제나 똑바로 선다.**
-          // 나머지가 기울어 보이는 건 진짜 룰렛판과 같은 모습이다.
-          g.save();
-          g.translate(c + Math.cos(a) * r, c + Math.sin(a) * r);
-          g.rotate(a + Math.PI / 2);
-          g.fillText(labels[i], 0, 0, c * 0.72);
-          g.restore();
-        }
-      }
+    if (rim) {
+      o.strokeStyle = rim;
+      o.lineWidth = 1;
+      o.beginPath();
+      o.arc(c, c, c - 1, 0, Math.PI * 2);
+      o.stroke();
+    }
+    // 가운데 축. 있어야 "돌아가는 판" 으로 읽힌다 (원이라 돌아도 그대로다)
+    if (hub) {
+      o.fillStyle = hub;
+      o.beginPath();
+      o.arc(c, c, size * 0.055, 0, Math.PI * 2);
+      o.fill();
+      if (rim) o.stroke();
+    }
 
-      if (rim) {
-        g.strokeStyle = rim;
-        g.lineWidth = 1;
-        g.beginPath();
-        g.arc(c, c, c - 1, 0, Math.PI * 2);
-        g.stroke();
-      }
-      // 가운데 축. 있어야 "돌아가는 판" 으로 읽힌다 (원이라 돌아도 그대로다)
-      if (hub) {
-        g.fillStyle = hub;
-        g.beginPath();
-        g.arc(c, c, size * 0.055, 0, Math.PI * 2);
-        g.fill();
-        if (rim) g.stroke();
-      }
+    const half = cv.width / 2;
+    drawRef.current = (deg: number) => {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, cv.width, cv.height);
+      g.translate(half, half);
+      g.rotate((deg * Math.PI) / 180);
+      g.drawImage(off, -half, -half);
+      g.setTransform(1, 0, 0, 1, 0, 0);
     };
 
     drawRef.current(angle.current);
@@ -715,7 +734,9 @@ function Roulette({
             className="absolute -top-1 left-1/2 z-10 size-5 -translate-x-1/2 bg-foreground"
             style={{ clipPath: "polygon(50% 100%, 0 0, 100% 0)" }}
           />
-          <canvas ref={discRef} className="size-full rounded-full" />
+          {/* `rounded-full` 을 안 건다. 판은 이미 원으로 그려져 있어서 마스크가
+              하는 일이 없는데, 프레임마다 합성 비용만 낸다. */}
+          <canvas ref={discRef} className="size-full" />
         </div>
       )}
 
