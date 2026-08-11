@@ -25,12 +25,20 @@ import {
   type MealType,
 } from "./api";
 
-/** 응답을 받은 뒤 룰렛이 멈추기까지. 이 시간 동안 결과를 감춘다 */
-const SHUFFLE_MS = 1200;
+/**
+ * 연출 전체 길이 — 이 시간 동안 결과 카드를 감춘다.
+ *
+ * **감속(`LANDING_MS`)보다 길다.** 차이만큼 판이 **멈춘 채로 서 있다.**
+ * 예전에는 둘이 같아서, 판이 서는 순간 결과 카드가 그 자리를 덮었다 —
+ * 어디에 섰는지 볼 틈이 없어서 "돌기는 도나?" 로 읽혔다 (2026-08-11 지적).
+ */
+const SHUFFLE_MS = 2600;
+/** 감속에 쓰는 시간. 나머지 600ms 는 답을 보여주고 서 있는 시간이다 */
+const LANDING_MS = 2000;
 /** 응답을 기다리는 동안의 회전 속도(초당 각도). 한 바퀴에 약 0.9초 */
 const FREE_SPIN_DPS = 400;
 /** 멈출 때까지 도는 최소 바퀴 수. 적으면 "돌았다" 는 느낌이 안 난다 */
-const LANDING_TURNS = 3;
+const LANDING_TURNS = 5;
 /** SPEC §3.2 의 p_exclude_days 기본값 */
 const EXCLUDE_DAYS = 7;
 
@@ -140,6 +148,28 @@ export function PickView() {
   // 후보가 0건이었을 때는 되뽑을 대상이 없으므로 [뽑아줘] 그대로다.
   const hasResult = showResult && result !== null;
 
+  /**
+   * 조건 카드는 **접힌 채로 시작한다** (2026-08-11 요청).
+   *
+   * 다섯 칸을 늘 펴 두면 [뽑아줘] 와 결과가 화면 아래로 밀려서, 뽑을 때마다
+   * 스크롤을 내려야 했다. 이 화면에서 제일 자주 하는 일은 조건을 고치는 게
+   * 아니라 **그냥 뽑는 것**이라, 조건은 접어 두고 지금 값만 한 줄로 적는다.
+   */
+  const [openConditions, setOpenConditions] = useState(false);
+
+  /** 접힌 줄에 적는 지금 조건. 안 적으면 무엇으로 뽑는지 모른 채 누르게 된다 */
+  const summary = [
+    meal === "lunch" ? "점심" : "저녁",
+    `${radius}m`,
+    categories.length === 0
+      ? "종류 전체"
+      : categories.length === 1
+        ? categories[0]
+        : `${categories[0]} 외 ${categories.length - 1}`,
+    maxPrice === null ? "가격 상관없음" : `${PRICE_LABEL[maxPrice]}까지`,
+    excludeRecent ? `최근 ${EXCLUDE_DAYS}일 뺌` : "최근 간 곳 포함",
+  ].join(" · ");
+
   const toggle = (c: Category) =>
     setCategories((p) =>
       p.includes(c) ? p.filter((x) => x !== c) : [...p, c],
@@ -170,94 +200,100 @@ export function PickView() {
             : `위치를 못 얻어서 ${OFFICE.name}을 기준으로 찾아요`}
       </p>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-label font-medium">언제</legend>
-        <div
-          role="group"
-          className="flex gap-1 self-start rounded-chip border border-border p-1"
-        >
-          {MEALS.map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              aria-pressed={meal === m.key}
-              onClick={() => setMeal(m.key)}
-              className={`rounded-chip px-3 py-1 text-label ${
-                meal === m.key
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground hover:bg-muted"
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </fieldset>
+      <Conditions
+        open={openConditions}
+        onToggle={() => setOpenConditions((v) => !v)}
+        summary={summary}
+      >
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-label font-medium">언제</legend>
+          <div
+            role="group"
+            className="flex gap-1 self-start rounded-chip border border-border p-1"
+          >
+            {MEALS.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                aria-pressed={meal === m.key}
+                onClick={() => setMeal(m.key)}
+                className={`rounded-chip px-3 py-1 text-label ${
+                  meal === m.key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground hover:bg-muted"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-label font-medium">반경</legend>
-        <div
-          role="group"
-          className="flex gap-1 self-start rounded-chip border border-border p-1"
-        >
-          {RADIUS_OPTIONS.map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={radius === m}
-              onClick={() => setRadius(m)}
-              className={`tnum rounded-chip px-2.5 py-1 text-label ${
-                radius === m
-                  ? "bg-primary text-primary-foreground"
-                  : "text-foreground hover:bg-muted"
-              }`}
-            >
-              {m}m
-            </button>
-          ))}
-        </div>
-      </fieldset>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-label font-medium">반경</legend>
+          <div
+            role="group"
+            className="flex gap-1 self-start rounded-chip border border-border p-1"
+          >
+            {RADIUS_OPTIONS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={radius === m}
+                onClick={() => setRadius(m)}
+                className={`tnum rounded-chip px-2.5 py-1 text-label ${
+                  radius === m
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground hover:bg-muted"
+                }`}
+              >
+                {m}m
+              </button>
+            ))}
+          </div>
+        </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-label font-medium">카테고리</legend>
-        <div className="flex flex-wrap gap-2">
-          {(categoryList.data ?? []).map((c) => (
-            <CategoryChip
-              key={c}
-              category={c}
-              selected={categories.includes(c)}
-              onToggle={toggle}
-            />
-          ))}
-        </div>
-      </fieldset>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-label font-medium">카테고리</legend>
+          <div className="flex flex-wrap gap-2">
+            {(categoryList.data ?? []).map((c) => (
+              <CategoryChip
+                key={c}
+                category={c}
+                selected={categories.includes(c)}
+                onToggle={toggle}
+              />
+            ))}
+          </div>
+        </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-label font-medium">가격대</legend>
-        <div role="group" className="flex flex-wrap gap-1">
-          <PriceChip
-            label="상관없음"
-            active={maxPrice === null}
-            onClick={() => setMaxPrice(null)}
-          />
-          {[1, 2, 3, 4].map((p) => (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-label font-medium">가격대</legend>
+          <div role="group" className="flex flex-wrap gap-1">
             <PriceChip
-              key={p}
-              label={`${PRICE_LABEL[p]}까지`}
-              active={maxPrice === p}
-              onClick={() => setMaxPrice(p)}
+              label="상관없음"
+              active={maxPrice === null}
+              onClick={() => setMaxPrice(null)}
             />
-          ))}
-        </div>
-      </fieldset>
+            {[1, 2, 3, 4].map((p) => (
+              <PriceChip
+                key={p}
+                label={`${PRICE_LABEL[p]}까지`}
+                active={maxPrice === p}
+                onClick={() => setMaxPrice(p)}
+              />
+            ))}
+          </div>
+        </fieldset>
 
-      <label className="flex items-center gap-2">
-        <Switch checked={excludeRecent} onCheckedChange={setExcludeRecent} />
-        {/* 색만으로 알리지 않도록 상태를 글자로도 쓴다 */}
-        <span className="text-label">
-          최근 {EXCLUDE_DAYS}일 안에 간 곳 빼기 {excludeRecent ? "켬" : "끔"}
-        </span>
-      </label>
+        <label className="flex items-center gap-2">
+          <Switch checked={excludeRecent} onCheckedChange={setExcludeRecent} />
+          {/* 색만으로 알리지 않도록 상태를 글자로도 쓴다 */}
+          <span className="text-label">
+            최근 {EXCLUDE_DAYS}일 안에 간 곳 빼기 {excludeRecent ? "켬" : "끔"}
+          </span>
+        </label>
+      </Conditions>
 
       <div className="flex items-center gap-2">
         {/* 결과가 떠 있어도 이 버튼은 계속 보인다. 자리를 옮기지 않고 이름만
@@ -324,6 +360,58 @@ export function PickView() {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 조회 조건을 담는 접었다 펴는 카드 (2026-08-11 요청).
+ *
+ * 접혀 있을 때도 **지금 조건을 한 줄로 적는다.** 안 적으면 무엇으로 뽑는지
+ * 모른 채 [뽑아줘] 를 누르게 되고, 결과가 이상할 때 어디를 봐야 하는지도 모른다.
+ *
+ * 접히면 안쪽을 **DOM 에서 뺀다.** 남겨 두면 Tab 이 안 보이는 칩 스무 개를
+ * 지나간다. 그래서 `aria-controls` 도 펴져 있을 때만 가리킨다 —
+ * 없는 id 를 가리키는 것보다 아예 안 가리키는 쪽이 맞다.
+ */
+function Conditions({
+  open,
+  onToggle,
+  summary,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  summary: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-border">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={open ? "pick-conditions" : undefined}
+        onClick={onToggle}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left"
+      >
+        <span className="shrink-0 text-label font-medium">조건</span>
+        <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
+          {summary}
+        </span>
+        {/* 상태를 기호로만 알리지 않는다. 무엇이 일어날지 글자로 쓴다 (CLAUDE.md) */}
+        <span className="shrink-0 text-caption font-medium text-brand-700">
+          {open ? "접기" : "펴기"}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          id="pick-conditions"
+          className="flex flex-col gap-5 border-t border-border px-4 py-4"
+        >
+          {children}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -442,7 +530,7 @@ function Roulette({
       prev = now;
       const land = landing.current;
       if (land) {
-        const t = Math.min((now - land.start) / SHUFFLE_MS, 1);
+        const t = Math.min((now - land.start) / LANDING_MS, 1);
         // 세제곱 ease-out. 마지막에 느려지는 것이 룰렛의 전부다.
         angle.current = land.from + (land.to - land.from) * (1 - (1 - t) ** 3);
       } else {
@@ -477,10 +565,10 @@ function Roulette({
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-border p-6">
       {drawable && (
-        <div aria-hidden="true" className="relative size-40">
+        <div aria-hidden="true" className="relative size-64 max-w-full">
           {/* 바늘. 12시에 고정이고 판이 그 아래로 돈다 */}
           <span
-            className="absolute -top-1 left-1/2 z-10 size-4 -translate-x-1/2 bg-foreground"
+            className="absolute -top-1 left-1/2 z-10 size-5 -translate-x-1/2 bg-foreground"
             style={{ clipPath: "polygon(50% 100%, 0 0, 100% 0)" }}
           />
           <div
@@ -491,10 +579,7 @@ function Roulette({
           {/* 가운데 창. 지금 바늘 아래 있는 칸 이름을 글자로 보여준다 —
               색만으로 알리지 않는다 (CLAUDE.md). */}
           <div className="absolute inset-[26%] flex items-center justify-center rounded-full border border-border bg-background px-1">
-            <span
-              ref={labelRef}
-              className="truncate text-label font-medium"
-            >
+            <span ref={labelRef} className="truncate text-subtitle font-medium">
               {labels[0]}
             </span>
           </div>
