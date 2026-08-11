@@ -26,19 +26,31 @@ import {
 } from "./api";
 
 /**
- * 연출 전체 길이 — 이 시간 동안 결과 카드를 감춘다.
+ * 연출 길이는 **네트워크와 무관하게 정해져 있다** (2026-08-11 요청).
  *
- * **감속(`LANDING_MS`)보다 길다.** 차이만큼 판이 **멈춘 채로 서 있다.**
- * 예전에는 둘이 같아서, 판이 서는 순간 결과 카드가 그 자리를 덮었다 —
- * 어디에 섰는지 볼 틈이 없어서 "돌기는 도나?" 로 읽혔다 (2026-08-11 지적).
+ * 예전에는 응답이 오는 순간부터 재기 시작해서, 응답이 빠르면(보통 그렇다)
+ * 등속으로 도는 구간이 사실상 0이었다 — 누르자마자 감속만 하고 서 버려서
+ * "휙 지나갔다" 로 보였다. 이제 **누른 시각**을 기준으로 잡는다:
+ *
+ *   누름 ─(등속 SPIN_MIN_MS)─ 감속 시작 ─(LANDING_MS)─ 정지 ─(HOLD_MS)─ 결과
+ *
+ * 응답이 `SPIN_MIN_MS` 보다 늦으면 그때까지 등속으로 더 돈다. 어디 설지 모르는
+ * 채로 감속할 수는 없기 때문이다 — 그건 "곧 멈춘다" 는 거짓말이 된다.
  */
-const SHUFFLE_MS = 2600;
-/** 감속에 쓰는 시간. 나머지 600ms 는 답을 보여주고 서 있는 시간이다 */
-const LANDING_MS = 2000;
-/** 응답을 기다리는 동안의 회전 속도(초당 각도). 한 바퀴에 약 0.9초 */
-const FREE_SPIN_DPS = 400;
-/** 멈출 때까지 도는 최소 바퀴 수. 적으면 "돌았다" 는 느낌이 안 난다 */
-const LANDING_TURNS = 5;
+const SPIN_MIN_MS = 900;
+/** 감속에 쓰는 시간 */
+const LANDING_MS = 2400;
+/** 선 자리를 보여주고 서 있는 시간. 이게 없으면 결과 카드가 판을 덮어 버린다 */
+const HOLD_MS = 600;
+/**
+ * 등속 회전 속도(초당 각도). 한 바퀴에 0.8초.
+ *
+ * 감속 구간의 첫 속도(`2Δ/T`)와 비슷하게 잡았다. 크게 어긋나면 감속이 시작될 때
+ * 판이 한 번 튕기는 것처럼 보인다.
+ */
+const FREE_SPIN_DPS = 450;
+/** 감속하며 최소 몇 바퀴를 더 도는지. 나머지는 설 자리를 맞추는 데 쓴다 */
+const LANDING_TURNS = 1;
 /** SPEC §3.2 의 p_exclude_days 기본값 */
 const EXCLUDE_DAYS = 7;
 
@@ -326,6 +338,7 @@ export function PickView() {
             targetIndex={
               shuffling && result ? wheelLabels.indexOf(result.category) : null
             }
+            spinStartedAt={pick.submittedAt}
             reduce={reduceMotion}
           />
         )}
@@ -416,11 +429,18 @@ function Conditions({
 }
 
 /**
- * 응답을 받은 뒤 `SHUFFLE_MS` 동안 true. 그 사이 결과를 감춘다.
+ * 연출이 도는 동안 true. 그 사이 결과 카드를 감춘다.
  *
  * **결과는 이미 손에 있다.** 애니메이션이 결과를 정하지 않는다 —
- * 네트워크가 느려도 셔플 도중 값이 바뀌지 않는 이유가 이것이다 (WBS 4.3 DoD).
- * `prefers-reduced-motion` 이면 셔플을 건너뛰고 즉시 보여준다.
+ * 네트워크가 느려도 도는 도중 값이 바뀌지 않는 이유가 이것이다 (WBS 4.3 DoD).
+ *
+ * 남은 시간은 **누른 시각**에서 잰다 (`startedAt`). 응답이 빨랐으면 등속 구간이
+ * 아직 남아 있고, 늦었으면 그 구간은 이미 지나갔다.
+ *
+ * `prefers-reduced-motion` 이면 **돌리지 않고 답 위에 세워 둔다.** 예전엔 연출을
+ * 통째로 건너뛰었는데, 그러면 판이 한 번 번쩍이고 사라져서 오히려 어수선하다.
+ * 움직임 없이 선 자리를 잠깐 보여주는 쪽이 요청(움직임 줄이기)에도 맞고
+ * 화면도 조용하다.
  */
 function useShuffle(startedAt: number | null, reduce: boolean) {
   const [running, setRunning] = useState(false);
@@ -430,13 +450,12 @@ function useShuffle(startedAt: number | null, reduce: boolean) {
     if (startedAt === null || startedAt === last.current) return;
     last.current = startedAt;
 
-    if (reduce) {
-      setRunning(false);
-      return;
-    }
-
     setRunning(true);
-    const t = setTimeout(() => setRunning(false), SHUFFLE_MS);
+    const wait = reduce
+      ? 0
+      : Math.max(0, startedAt + SPIN_MIN_MS - Date.now());
+    const total = reduce ? HOLD_MS : wait + LANDING_MS + HOLD_MS;
+    const t = setTimeout(() => setRunning(false), total);
     return () => clearTimeout(t);
   }, [startedAt, reduce]);
 
@@ -473,6 +492,8 @@ function useReducedMotion() {
  * 두 상태를 구분하는 건 바와 똑같다. 이게 핵심이다:
  * - `targetIndex === null` — 아직 응답을 기다린다. 어디에 멈출지 모르니 **일정한
  *   속도로 계속 돈다.** 여기서 감속을 시작하면 "곧 멈춘다" 는 거짓말이 된다.
+ *   응답이 빨리 와도 **누른 지 `SPIN_MIN_MS` 가 지나야** 감속을 시작한다 —
+ *   연출 길이를 네트워크가 정하면 누를 때마다 다른 화면이 된다.
  * - 숫자가 들어오면 — 응답이 왔고 답도 정해졌다. 그 칸에 오도록 몇 바퀴 더 돌며
  *   감속한다. **판이 답을 정하는 게 아니라 답이 판을 세운다** (CLAUDE.md:
  *   추천 결과는 서버가 결정한다).
@@ -502,11 +523,14 @@ function useReducedMotion() {
 function Roulette({
   labels,
   targetIndex,
+  spinStartedAt,
   reduce,
 }: {
   labels: readonly Category[];
   /** 멈출 칸. null 이면 아직 응답 전이라 계속 돈다 */
   targetIndex: number | null;
+  /** [뽑아줘] 를 누른 시각(`Date.now()`). 등속 구간을 여기서부터 잰다 */
+  spinStartedAt: number;
   /** 움직임을 줄여 달라고 한 사람에게는 안 돌린다 */
   reduce: boolean;
 }) {
@@ -514,28 +538,43 @@ function Roulette({
   const angle = useRef(0);
   /** 지금 각도로 판을 다시 그린다. 색·글꼴을 한 번 읽어 둔 뒤 채워진다 */
   const drawRef = useRef<(deg: number) => void>(() => {});
-  /** 감속 구간. null 이면 등속으로 도는 중이다 */
+  /** 멈출 칸 (rAF 안에서 읽는다) */
+  const target = useRef<number | null>(null);
+  /** 감속을 시작할 시각(`performance.now()` 기준). null 이면 아직 답이 없다 */
+  const landAt = useRef<number | null>(null);
+  /** 감속 구간. 시작 시각이 되면 그 자리에서 만들어진다 */
   const landing = useRef<{ from: number; to: number; start: number } | null>(
     null,
   );
 
   const n = labels.length;
 
+  /** 칸 i 가 바늘(12시)에 오는 회전량 */
+  const restAngle = (i: number) =>
+    ((((360 - (i + 0.5) * (360 / n)) % 360) + 360) % 360);
+
   useEffect(() => {
     if (targetIndex === null || n === 0) {
+      target.current = null;
+      landAt.current = null;
       landing.current = null;
       return;
     }
-    const step = 360 / n;
-    // 칸 i 는 판 좌표로 [i*step, (i+1)*step). 바늘은 12시에 고정이라, 판을 R 만큼
-    // 돌리면 12시에 오는 칸 좌표는 (360 - R). 그게 칸 한가운데가 되게 R 을 고른다.
-    const want = (((360 - (targetIndex + 0.5) * step) % 360) + 360) % 360;
-    const from = angle.current;
-    // **앞으로만 돈다.** 뒤로 감기면 룰렛이 아니라 되감기로 보인다.
-    let to = Math.ceil(from / 360) * 360 + LANDING_TURNS * 360 + want;
-    while (to <= from) to += 360;
-    landing.current = { from, to, start: performance.now() };
-  }, [targetIndex, n]);
+    target.current = targetIndex;
+
+    // 움직임을 줄여 달라고 했으면 **돌리지 않고 답 위에 세운다.**
+    if (reduce) {
+      angle.current = restAngle(targetIndex);
+      drawRef.current(angle.current);
+      return;
+    }
+
+    // **누른 시각 기준으로** 등속 구간이 얼마나 남았는지 잰다. 응답이 빨라도
+    // 그만큼은 돌고 나서 감속한다 — 안 그러면 누르자마자 서 버린다.
+    landAt.current =
+      performance.now() + Math.max(0, spinStartedAt + SPIN_MIN_MS - Date.now());
+    landing.current = null;
+  }, [targetIndex, n, spinStartedAt, reduce]);
 
   useEffect(() => {
     if (reduce || n === 0) return;
@@ -544,11 +583,23 @@ function Roulette({
     const paint = (now: number) => {
       const dt = now - prev;
       prev = now;
+      // 감속 시작 시각이 지났으면 그 자리에서 감속 구간을 만든다. 미리 만들면
+      // 등속으로 더 도는 동안 시작 각도가 어긋난다.
+      if (!landing.current && landAt.current !== null && now >= landAt.current) {
+        const from = angle.current;
+        const want = restAngle(target.current ?? 0);
+        // **앞으로만 돈다.** 뒤로 감기면 룰렛이 아니라 되감기로 보인다.
+        let to = Math.ceil(from / 360) * 360 + LANDING_TURNS * 360 + want;
+        while (to <= from) to += 360;
+        landing.current = { from, to, start: now };
+      }
+
       const land = landing.current;
       if (land) {
         const t = Math.min((now - land.start) / LANDING_MS, 1);
-        // 세제곱 ease-out. 마지막에 느려지는 것이 룰렛의 전부다.
-        angle.current = land.from + (land.to - land.from) * (1 - (1 - t) ** 3);
+        // 제곱 ease-out. 첫 속도가 `2Δ/T` 라 등속 구간 속도와 얼추 이어진다 —
+        // 세제곱(`3Δ/T`)이면 감속이 시작될 때 판이 한 번 튕기는 것처럼 보인다.
+        angle.current = land.from + (land.to - land.from) * (1 - (1 - t) ** 2);
       } else {
         angle.current += (dt / 1000) * FREE_SPIN_DPS;
       }
