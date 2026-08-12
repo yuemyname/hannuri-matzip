@@ -86,6 +86,10 @@ const MENU = [
   { href: "/feedback", label: "피드백", primary: false },
 ] as const;
 
+/** 후원 링크. 이 앱에서 바깥으로 나가는 유일한 자리다 */
+const KOFI_URL = "https://ko-fi.com/L4U224X239";
+const KOFI_BUTTON = "https://storage.ko-fi.com/cdn/kofi3.png?v=6";
+
 type Position = ReturnType<typeof useCurrentPosition>;
 
 /**
@@ -273,6 +277,34 @@ function MapActions({ position }: { position: Position }) {
               {m.label}
             </Link>
           ))}
+          {/* 후원 (2026-08-12 요청). 앱 밖으로 나가는 유일한 항목이라 맨 아래에
+              둔다 — 위쪽은 전부 이 앱 안에서 할 일이다.
+              ko-fi 가 주는 버튼 그림을 그대로 쓴다. 우리 칩 모양으로 다시
+              그리지 않는다 — 남의 서비스로 보내는 링크는 그쪽 상표로 보이는
+              편이 눌러도 되는지 판단하기 쉽다. 그래서 여기만 테두리·그림자가
+              없다 (그림이 이미 버튼 모양이다).
+              높이 `h-9` 는 ko-fi 가 지정한 36px 이자 위 항목들의 높이다. */}
+          <a
+            href={KOFI_URL}
+            target="_blank"
+            // 새 탭에 우리 창 참조를 넘기지 않는다. 넘기면 그쪽에서
+            // `window.opener.location` 으로 이 탭을 바꿀 수 있다.
+            rel="noreferrer"
+            onClick={() => setOpen(false)}
+            className="pointer-events-auto"
+          >
+            {/* next/image 는 외부 도메인 등록이 필요한데, 저 그림은 ko-fi 가
+                크기까지 정해 놓은 36px 짜리라 최적화할 여지가 없다. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={KOFI_BUTTON}
+              // 그림이 안 뜨면 이 글자가 대신 보인다. 원본 alt 는 영문이라
+              // 우리 문구로 바꿨다. 새 탭이 열리는 것도 여기서 알린다.
+              alt="커피 한 잔 사주기 (새 창)"
+              loading="lazy"
+              className="h-9 w-auto"
+            />
+          </a>
         </nav>
       )}
     </div>
