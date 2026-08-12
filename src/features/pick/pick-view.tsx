@@ -178,14 +178,25 @@ export function PickView() {
   }, [pick.isError]);
 
   /**
-   * 판에 그릴 칸. 종류 목록 그대로지만, **뽑힌 종류는 반드시 들어 있어야 한다** —
-   * 목록이 낡아 그 종류가 빠져 있으면 멈출 칸이 없어서 엉뚱한 칸에 선다.
+   * 판에 그릴 칸 = **지금 나올 수 있는 종류**다 (2026-08-12 정정).
+   *
+   * 전에는 조건과 상관없이 늘 전체 목록을 그렸다. 「한식」만 골라 놓아도 판에는
+   * 일곱 칸이 그대로 돌아서, 나올 수 없는 종류가 나올 것처럼 보였다 — 판이
+   * 조건을 배신한 것이다. 아무것도 안 고르면 전체가 후보이므로 그대로 전체다.
+   *
+   * 고른 순서가 아니라 **목록 순서**로 세운다. 칩을 누른 차례대로 칸을 만들면
+   * 같은 조건인데 순서만 다른 판이 나온다.
+   *
+   * 뽑힌 종류는 무슨 일이 있어도 들어 있어야 한다 — 멈출 칸이 없으면 엉뚱한
+   * 칸에 선다 (목록이 낡았거나, 조건을 바꾸는 사이에 답이 온 경우).
    */
   const wheelLabels = useMemo(() => {
-    const list = categoryList.data ?? [];
-    if (result === null || list.includes(result.category)) return list;
-    return [...list, result.category];
-  }, [categoryList.data, result]);
+    const all = categoryList.data ?? [];
+    const base =
+      categories.length > 0 ? all.filter((c) => categories.includes(c)) : all;
+    if (result === null || base.includes(result.category)) return base;
+    return [...base, result.category];
+  }, [categoryList.data, categories, result]);
   const showResult = pick.isSuccess && !shuffling;
   // 뽑힌 곳이 화면에 있는지. 있으면 위 버튼이 [다시 뽑기] 가 된다.
   // 후보가 0건이었을 때는 되뽑을 대상이 없으므로 [뽑아줘] 그대로다.
@@ -741,12 +752,19 @@ function Roulette({
     drawRef.current();
   }, [labels, n]);
 
-  // 종류가 하나뿐이면 판이 될 수 없다. 그때는 글자만 남긴다 —
-  // 칸이 하나인 룰렛은 돌 이유가 없고, 돌면 오히려 고장으로 보인다.
+  /**
+   * 칸이 하나면 판이 될 수 없다 — 돌 이유가 없고, 돌면 오히려 고장으로 보인다.
+   * 종류를 하나만 골랐을 때가 그렇다 (2026-08-12 부터 실제로 일어난다).
+   * 그때는 판 대신 **고른 종류 이름**을 크게 남긴다. 판만 지우면 테두리 안에
+   * 「고르는 중」 넉 자만 남아서 무엇을 고르는 중인지가 사라진다.
+   */
   const drawable = n >= 2;
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-border p-6">
+      {!drawable && n === 1 && (
+        <span className="py-8 text-title font-medium">{labels[0]}</span>
+      )}
       {drawable && (
         <div aria-hidden="true" className="relative size-64 max-w-full">
           {/* 바늘. 12시에 고정이고 판이 그 아래로 돈다 */}
