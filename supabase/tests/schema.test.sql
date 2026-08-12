@@ -692,13 +692,17 @@ $$;
 do $$
 declare uid uuid := '11111111-1111-1111-1111-111111111111';
 begin
+  -- **셋을 같은 종류로 둔다** (2026-08-12). 뽑기가 종류부터 공평해져서, 종류가
+  -- 다르면 세 곳이 각자 한 종류를 통째로 차지해 평점 가중치가 아예 안 보인다
+  -- (실제로 이 픽스처가 한식·중식·일식이던 동안 아래 검사가 동전 던지기였다).
+  -- 평점 순위는 **종류 안에서** 유지되는 것이므로 종류를 맞춰야 검사가 된다.
   insert into restaurants(id, name, category, location, price_range, created_by)
   values
     ('aaaa0001-0000-0000-0000-000000000001', '픽_고평점', '한식',
      st_makepoint(128.5, 35.5)::geography, 1, uid),
-    ('aaaa0002-0000-0000-0000-000000000002', '픽_저평점', '중식',
+    ('aaaa0002-0000-0000-0000-000000000002', '픽_저평점', '한식',
      st_makepoint(128.5001, 35.5)::geography, 4, uid),
-    ('aaaa0003-0000-0000-0000-000000000003', '픽_신규', '일식',
+    ('aaaa0003-0000-0000-0000-000000000003', '픽_신규', '한식',
      st_makepoint(128.5002, 35.5)::geography, 2, uid);
 
   -- 고평점 5점 / 저평점 1점 / 신규는 리뷰 없음
@@ -967,6 +971,69 @@ begin
   end if;
   raise notice '시간대별 거리 무게 — 점심 가까움 %/% (하한 %), 저녁 가까움 %/% (상한 %)',
     l_near, RUNS, LUNCH_FLOOR, d_near, RUNS, DINNER_CEIL;
+end
+$$;
+
+-- ── 8d. 종류부터 공평하다 (2026-08-12 요청: "한식이 너무 많이 나와") ──
+--
+-- 곳 단위로만 뽑으면 등록이 많은 종류가 그만큼 자주 나온다. 화면의 룰렛은 칸을
+-- 똑같은 크기로 그려서 "종류는 공평하다" 고 약속하는 것처럼 읽히므로, 실제도
+-- 그렇게 맞췄다: **후보에 남은 종류를 먼저 고르고, 그 안에서 곳을 고른다.**
+--
+-- 한식 셋 대 카페 하나를 같은 자리에 두고 본다. 예전 식이면 카페가 25%,
+-- 지금은 50% 여야 한다.
+do $$
+declare uid uuid := '11111111-1111-1111-1111-111111111111';
+begin
+  insert into restaurants(id, name, category, location, created_by)
+  values
+    ('ffff0001-0000-0000-0000-000000000001', '공평_한식1', '한식',
+     st_makepoint(129.1, 36.1)::geography, uid),
+    ('ffff0002-0000-0000-0000-000000000002', '공평_한식2', '한식',
+     st_makepoint(129.1, 36.1)::geography, uid),
+    ('ffff0003-0000-0000-0000-000000000003', '공평_한식3', '한식',
+     st_makepoint(129.1, 36.1)::geography, uid),
+    ('ffff0004-0000-0000-0000-000000000004', '공평_카페1', '카페',
+     st_makepoint(129.1, 36.1)::geography, uid);
+
+  -- 하나에만 별 5개를 달아 **한식 셋의 무게를 서로 다르게** 만든다. 종류 합을
+  -- 제대로 나누는지 보려면 안이 고르지 않아야 한다 — 셋이 똑같으면 개수로만
+  -- 나눠도 우연히 맞는다.
+  insert into reviews(restaurant_id, user_id, rating)
+  values ('ffff0001-0000-0000-0000-000000000001', uid, 5);
+end
+$$;
+
+do $$
+declare
+  RUNS constant int := 1000;
+  -- 기대 50%. 표준편차 1.6%p 라 4σ 를 잡아 44~56% 로 둔다. 예전 식(25%)은
+  -- 하한에서 12σ 밖이라 절대 못 지나가고, "카페만 나온다" 는 상한이 잡는다.
+  LO constant int := RUNS * 44 / 100;
+  HI constant int := RUNS * 56 / 100;
+  i int; hit text; n_cafe int := 0; n_han int := 0; n_seen int;
+begin
+  create temp table _fair_runs(name text) on commit drop;
+  for i in 1..RUNS loop
+    select p.name into hit from pick_restaurant(36.1, 129.1, 200, 'lunch') p;
+    insert into _fair_runs values (hit);
+    if hit = '공평_카페1' then n_cafe := n_cafe + 1;
+    else n_han := n_han + 1; end if;
+  end loop;
+
+  if n_cafe < LO or n_cafe > HI then
+    raise exception '종류가 공평하지 않다 (카페 %회, 한식 %회 / 통과 %~%)',
+      n_cafe, n_han, LO, HI;
+  end if;
+
+  -- **한식 셋이 다 나와야 한다.** 종류 안에서 한 곳만 뽑히면 "종류는 공평한데
+  -- 그 안은 고정" 이 되는데, 그건 위 비율만으로는 안 걸린다.
+  select count(distinct name) into n_seen from _fair_runs where name <> '공평_카페1';
+  if n_seen <> 3 then
+    raise exception '한식 셋 중 %곳만 나왔다 — 종류 안에서 안 흩어진다', n_seen;
+  end if;
+
+  raise notice '종류 공평 — 카페 %/%, 한식 % (%곳)', n_cafe, RUNS, n_han, n_seen;
 end
 $$;
 
