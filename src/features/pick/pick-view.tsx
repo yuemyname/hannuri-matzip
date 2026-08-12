@@ -13,9 +13,15 @@ import { Rating } from "@/components/rating";
 import { Distance } from "@/components/distance";
 import type { Category } from "@/lib/categories";
 import { useCategories } from "@/features/categories/api";
-import { OFFICE, RADIUS_OPTIONS, readToken } from "@/features/map/config";
+import {
+  OFFICE,
+  RADIUS_OPTIONS,
+  radiusLabel,
+  readToken,
+} from "@/features/map/config";
 import { useCurrentPosition } from "@/features/map/use-current-position";
 import { useMapView } from "@/features/map/map-store";
+import { useNearby } from "@/features/restaurants/use-nearby";
 import { PRICE_LABEL, priceReasonAt } from "@/features/restaurants/price";
 import type { NearbyRestaurant } from "@/features/restaurants/api";
 import {
@@ -46,6 +52,31 @@ const HOLD_MS = 700;
 const LANDING_TURNS = 5;
 /** SPEC §3.2 의 p_exclude_days 기본값 */
 const EXCLUDE_DAYS = 7;
+
+/**
+ * 이름을 놓는 자리 — 반지름의 몇 할인가. 테두리와 가운데 사이다.
+ * 바깥으로 갈수록 칸이 벌어져 글자가 더 들어가지만, 너무 나가면 테두리에 닿는다.
+ */
+const R_LABEL = 0.68;
+
+/**
+ * 종류를 하나만 골랐을 때 판에 올릴 가게 수의 상한. 가까운 순 앞에서 자른다.
+ * 서른 곳을 다 칸으로 만들면 이름이 안 읽힌다.
+ */
+const WHEEL_NAME_MAX = 10;
+
+/**
+ * 칸이 몇 개일 때 같은 이름을 몇 번씩 놓을지 (2026-08-12 요청).
+ *
+ *   2 → 4번씩 8칸 / 3 → 3번씩 9칸 / 4 → 2번씩 8칸 / 5 → 2번씩 10칸
+ *   6 이상 → 그대로. 이미 판으로 보이고, 더 늘리면 이름이 안 읽힌다.
+ *   1 이하 → 그대로. 한 칸을 여덟으로 늘려 봐야 같은 이름 여덟 개다.
+ */
+const WHEEL_MIN_SLICES = 8;
+function sliceReps(n: number): number {
+  if (n < 2 || n >= 6) return 1;
+  return Math.ceil(WHEEL_MIN_SLICES / n);
+}
 
 const MEALS: { key: MealType; label: string }[] = [
   { key: "lunch", label: "점심" },
@@ -178,25 +209,99 @@ export function PickView() {
   }, [pick.isError]);
 
   /**
-   * 판에 그릴 칸 = **지금 나올 수 있는 종류**다 (2026-08-12 정정).
+   * 종류를 **하나만** 골랐으면 판에 종류 대신 **가게 이름**을 올린다
+   * (2026-08-12 요청). 「한식」 한 칸짜리 판은 뽑는 그림이 안 된다 — 그 조건에서
+   * 실제로 갈리는 것은 종류가 아니라 가게다.
    *
-   * 전에는 조건과 상관없이 늘 전체 목록을 그렸다. 「한식」만 골라 놓아도 판에는
+   * 그래서 그때만 반경 안의 가게를 따로 받아 온다. 안 고르거나 둘 이상 골랐을
+   * 때는 받지 않는다 (`anchor` 가 null 이면 질의 자체가 안 나간다).
+   */
+  const soloCategory = categories.length === 1 ? categories[0] : null;
+  const soloNearby = useNearby(soloCategory ? center : null, radius, {
+    categories: soloCategory ? [soloCategory] : undefined,
+  });
+
+  /**
+   * 판에 올릴 가게 이름. **가까운 순으로 앞에서 몇 곳만** 쓴다.
+   *
+   * 서른 곳을 다 칸으로 만들면 이름이 안 읽힌다. 판은 후보 명단이 아니라
+   * "지금 이 중에서 고르는 중" 을 보여주는 그림이라, 몇 곳만 보여도 뜻이 산다.
+   * 뽑힌 곳이 이 안에 없으면 아래에서 칸을 하나 덧붙인다.
+   *
+   * 가격대는 여기서 한 번 더 거른다 — 서버가 거르는 조건이라, 안 거르면 판에
+   * 나올 수 없는 가게가 돈다. 「최근 간 곳 빼기」는 남의 방문 기록이라 여기서
+   * 알 수 없다. 그 경우는 덧붙이기가 받아 준다.
+   */
+  const soloNames = useMemo(() => {
+    if (!soloCategory) return null;
+    const rows = (soloNearby.data ?? []).filter(
+      (r) =>
+        maxPrice === null || r.priceRange === null || r.priceRange <= maxPrice,
+    );
+    // 아직 못 받았으면 종류 이름이라도 남긴다. 빈 판보다는 낫다.
+    if (rows.length === 0) return [soloCategory];
+    return rows.slice(0, WHEEL_NAME_MAX).map((r) => r.name);
+  }, [soloCategory, soloNearby.data, maxPrice]);
+
+  /**
+   * 판에 그릴 것 = **지금 나올 수 있는 것**이다 (2026-08-12 정정).
+   *
+   * 전에는 조건과 상관없이 늘 전체 종류를 그렸다. 「한식」만 골라 놓아도 판에는
    * 일곱 칸이 그대로 돌아서, 나올 수 없는 종류가 나올 것처럼 보였다 — 판이
    * 조건을 배신한 것이다. 아무것도 안 고르면 전체가 후보이므로 그대로 전체다.
    *
    * 고른 순서가 아니라 **목록 순서**로 세운다. 칩을 누른 차례대로 칸을 만들면
    * 같은 조건인데 순서만 다른 판이 나온다.
    *
-   * 뽑힌 종류는 무슨 일이 있어도 들어 있어야 한다 — 멈출 칸이 없으면 엉뚱한
+   * 뽑힌 것은 무슨 일이 있어도 들어 있어야 한다 — 멈출 칸이 없으면 엉뚱한
    * 칸에 선다 (목록이 낡았거나, 조건을 바꾸는 사이에 답이 온 경우).
    */
-  const wheelLabels = useMemo(() => {
+  const wheelBase = useMemo(() => {
     const all = categoryList.data ?? [];
     const base =
-      categories.length > 0 ? all.filter((c) => categories.includes(c)) : all;
-    if (result === null || base.includes(result.category)) return base;
-    return [...base, result.category];
-  }, [categoryList.data, categories, result]);
+      soloNames ??
+      (categories.length > 0 ? all.filter((c) => categories.includes(c)) : all);
+    const target =
+      result === null ? null : soloCategory ? result.name : result.category;
+    if (target === null || base.includes(target)) return base;
+    return [...base, target];
+  }, [categoryList.data, categories, soloCategory, soloNames, result]);
+
+  /**
+   * 칸이 적으면 판이 아니라 파이 차트로 보인다 (2026-08-12 요청). 둘이면 반반,
+   * 셋이면 세 조각 — 그건 돌려서 뽑는 그림이 아니다. 그래서 **같은 이름을 돌려
+   * 채워** 여덟 칸쯤 만든다. 한 바퀴를 통째로 반복하므로 칸이 번갈아 놓인다
+   * (A·B·A·B…). 붙여 놓으면(A·A·B·B) 반반짜리 판과 다를 바 없다.
+   *
+   * 여섯 이상이면 그대로 둔다 — 이미 판으로 보이고, 더 늘리면 이름이 안 읽힌다.
+   * 어느 칸에 서든 이름이 같으니 **결과는 그대로다.** 늘어난 건 그림뿐이다.
+   */
+  const wheelLabels = useMemo(() => {
+    const reps = sliceReps(wheelBase.length);
+    if (reps === 1) return wheelBase;
+    return Array.from({ length: reps }, () => wheelBase).flat();
+  }, [wheelBase]);
+
+  /**
+   * 멈출 칸. 같은 이름이 여럿이면 그중 하나를 고르는데, **누른 시각으로** 고른다 —
+   * `Math.random()` 을 쓰면 리렌더마다 자리가 바뀌고, 그건 도는 도중에 목표가
+   * 움직인다는 뜻이다. 어느 쪽을 골라도 이름이 같으니 결과와는 무관하다.
+   */
+  const targetIndex = useMemo(() => {
+    if (!pick.isSuccess || result === null) return null;
+    const label = soloCategory ? result.name : result.category;
+    const i = wheelBase.indexOf(label);
+    if (i < 0) return null;
+    const reps = wheelBase.length === 0 ? 1 : wheelLabels.length / wheelBase.length;
+    return i + (pick.submittedAt % reps) * wheelBase.length;
+  }, [
+    pick.isSuccess,
+    pick.submittedAt,
+    result,
+    soloCategory,
+    wheelBase,
+    wheelLabels,
+  ]);
   const showResult = pick.isSuccess && !shuffling;
   // 뽑힌 곳이 화면에 있는지. 있으면 위 버튼이 [다시 뽑기] 가 된다.
   // 후보가 0건이었을 때는 되뽑을 대상이 없으므로 [뽑아줘] 그대로다.
@@ -214,7 +319,7 @@ export function PickView() {
   /** 접힌 줄에 적는 지금 조건. 안 적으면 무엇으로 뽑는지 모른 채 누르게 된다 */
   const summary = [
     meal === "lunch" ? "점심" : "저녁",
-    `${radius}m`,
+    radiusLabel(radius),
     categories.length === 0
       ? "종류 전체"
       : categories.length === 1
@@ -293,7 +398,10 @@ export function PickView() {
           <legend className="text-label font-medium">반경</legend>
           <div
             role="group"
-            className="flex gap-1 self-start rounded-chip border border-border p-1"
+            // **줄바꿈을 허용한다** (2026-08-12). 반경이 여섯 칸이 되면서 360px
+            // 에서 「1km」가 화면 밖으로 밀렸다. 가로 스크롤로 두면 마지막 칸이
+            // 있는 줄 모르고 지나간다 — 넓히려고 늘린 선택지가 안 보이면 헛일이다.
+            className="flex flex-wrap gap-1 self-start rounded-chip border border-border p-1"
           >
             {RADIUS_OPTIONS.map((m) => (
               <button
@@ -307,7 +415,7 @@ export function PickView() {
                     : "text-foreground hover:bg-muted"
                 }`}
               >
-                {m}m
+                {radiusLabel(m)}
               </button>
             ))}
           </div>
@@ -383,13 +491,10 @@ export function PickView() {
         {(pick.isPending || shuffling) && (
           <Roulette
             labels={wheelLabels}
-            targetIndex={
-              // **이번 응답이 온 뒤에만** 칸을 정한다. 다시 뽑는 동안에는
-              // `result` 에 직전 결과가 남아 있어서, 그걸 보면 누르자마자 선다.
-              pick.isSuccess && result
-                ? wheelLabels.indexOf(result.category)
-                : null
-            }
+            // **이번 응답이 온 뒤에만** 칸이 정해진다 (`targetIndex` 안에서
+            // `pick.isSuccess` 를 본다). 다시 뽑는 동안에는 `result` 에 직전
+            // 결과가 남아 있어서, 그걸 그냥 보면 누르자마자 선다.
+            targetIndex={targetIndex}
             spinStartedAt={pick.submittedAt}
             reduce={reduceMotion}
           />
@@ -541,7 +646,8 @@ function Roulette({
   spinStartedAt,
   reduce,
 }: {
-  labels: readonly Category[];
+  /** 칸에 박을 글자. 종류 이름이거나 가게 이름이다 */
+  labels: readonly string[];
   /** 멈출 칸. null 이면 아직 응답 전이라 계속 돈다 */
   targetIndex: number | null;
   /** [뽑아줘] 를 누른 시각(`Date.now()`). 등속 구간을 여기서부터 잰다 */
@@ -710,11 +816,36 @@ function Roulette({
       o.font = `600 ${px}px ${family}`;
       o.textAlign = "center";
       o.textBaseline = "middle";
+      /**
+       * 칸에 안 들어가는 이름은 **줄여서 …** 를 붙인다 (2026-08-12).
+       *
+       * `fillText` 의 maxWidth 는 넘치면 글자를 가로로 눌러 버린다. 종류 이름은
+       * 두세 자라 걸릴 일이 없었는데, 가게 이름을 올리기 시작하면서 「한누리
+       * 해장국 본점」 같은 것이 납작하게 찌그러진다. 잘린 것은 잘린 것으로
+       * 보이는 편이 낫다.
+       */
+      /**
+       * 이름은 **칸을 가로지르는 방향**으로 놓인다. 그래서 쓸 수 있는 폭은
+       * 반지름이 아니라 **그 자리에서 칸이 벌어진 폭**이다 — 부채꼴의 두 변은
+       * 가운데에서 뻗어 나가므로, 반지름 r 자리의 반폭은 `r·tan(칸각/2)` 다.
+       *
+       * 예전엔 이걸 안 보고 `c*0.72` 를 그대로 썼다. 종류 이름은 두세 자라
+       * 안 걸렸는데, 가게 이름을 올리자마자 옆 칸을 파고들었다.
+       */
+      const maxW = Math.min(c * 0.72, 2 * R_LABEL * c * Math.tan(arc / 2) * 0.92);
+      const fit = (s: string) => {
+        if (o.measureText(s).width <= maxW) return s;
+        let cut = s;
+        while (cut.length > 1 && o.measureText(`${cut}…`).width > maxW) {
+          cut = cut.slice(0, -1);
+        }
+        return `${cut}…`;
+      };
       for (let i = 0; i < n; i++) {
         // 칸에 따라 글자색이 뒤집힌다. 브랜드색 위에는 흰 글자가 5.1:1 이다.
         o.fillStyle = isBrand(i) ? onBrand : ink;
         const a = arc * i + arc / 2 - Math.PI / 2;
-        const r = c * 0.62; // 테두리와 가운데 사이. 이름이 가장 잘 놓이는 자리
+        const r = c * R_LABEL;
         // **위아래를 따로 뒤집지 않는다.** 판이 통째로 도는 그림이라 판
         // 좌표에서 내린 판단은 돌아간 뒤엔 틀린다. 이대로 두면 착지 회전량이
         // 정확히 이 각도를 상쇄해서 **바늘에 선 칸은 언제나 똑바로 선다.**
@@ -722,7 +853,7 @@ function Roulette({
         o.save();
         o.translate(c + Math.cos(a) * r, c + Math.sin(a) * r);
         o.rotate(a + Math.PI / 2);
-        o.fillText(labels[i], 0, 0, c * 0.72);
+        o.fillText(fit(labels[i]), 0, 0);
         o.restore();
       }
     }
@@ -754,9 +885,9 @@ function Roulette({
 
   /**
    * 칸이 하나면 판이 될 수 없다 — 돌 이유가 없고, 돌면 오히려 고장으로 보인다.
-   * 종류를 하나만 골랐을 때가 그렇다 (2026-08-12 부터 실제로 일어난다).
-   * 그때는 판 대신 **고른 종류 이름**을 크게 남긴다. 판만 지우면 테두리 안에
-   * 「고르는 중」 넉 자만 남아서 무엇을 고르는 중인지가 사라진다.
+   * 후보가 한 곳뿐일 때가 그렇다 (종류를 하나 골랐는데 반경 안에 그 종류가
+   * 한 곳뿐인 경우). 그때는 판 대신 **그 이름**을 크게 남긴다. 판만 지우면
+   * 테두리 안에 「고르는 중」 넉 자만 남아 무엇을 고르는 중인지가 사라진다.
    */
   const drawable = n >= 2;
 
@@ -928,7 +1059,7 @@ function Empty({
       <p className="text-body">
         {hasFilters
           ? "이 조건에 맞는 곳이 없어요"
-          : `반경 ${radius}m 안에 뽑을 곳이 없어요`}
+          : `반경 ${radiusLabel(radius)} 안에 뽑을 곳이 없어요`}
       </p>
       {canWiden ? (
         <Button variant="outline" onClick={onWiden}>
