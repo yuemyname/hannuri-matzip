@@ -96,6 +96,8 @@ export function BillView() {
   const [opened, setOpened] = useState<number[]>([]);
   /** 지금 열리는 중인 하나 */
   const [busy, setBusy] = useState<number | null>(null);
+  /** [한 번에 펼치기] 가 도는 중. 도는 동안은 손으로 못 연다 */
+  const [sweeping, setSweeping] = useState(false);
 
   // 타이머를 정리하지 않으면 모달을 닫은 뒤에도 상태를 건드린다.
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -111,10 +113,14 @@ export function BillView() {
    * 안 된다. `Math.random()` 은 서버에 없어도 되는 값이라 이펙트 안에서만 부른다.
    */
   const deal = (n: number, w: number) => {
+    // 펼치는 중에 다시 깔면 남은 타이머가 새 판을 열어 버린다. 먼저 걷는다.
+    for (const t of timers.current) clearTimeout(t);
+    timers.current = [];
     setPayers(drawPayers(n, w));
     setRungs(makeRungs(n));
     setOpened([]);
     setBusy(null);
+    setSweeping(false);
   };
   useEffect(() => {
     deal(people, Math.min(winners, people - 1));
@@ -125,7 +131,7 @@ export function BillView() {
     payers.length > 0 && payers.every((p) => opened.includes(p));
 
   const open = (n: number) => {
-    if (done || opened.includes(n) || busy !== null) return;
+    if (done || sweeping || opened.includes(n) || busy !== null) return;
     setBusy(n);
     const t = setTimeout(
       () => {
@@ -135,6 +141,41 @@ export function BillView() {
       waitFor(game === "slip" ? FLIP_MS / 2 : TRACE_MS),
     );
     timers.current.push(t);
+  };
+
+  /**
+   * 남은 제비를 **한 번에 다 편다** (2026-08-12 요청). 둘이서 눈치만 보다
+   * 끝내고 싶은 날이 있다 — 한 장씩이 규칙이 아니라 기본값일 뿐이다.
+   *
+   * 다만 동시에 확 펴지 않고 **왼쪽부터 물결로** 편다. 스무 장이 한 프레임에
+   * 뒤집히면 어느 장이 당첨인지 눈이 못 쫓는다. 당첨을 다 찾아도 멈추지 않고
+   * 끝까지 편다 — "다 펼치기" 를 눌렀는데 몇 장이 접힌 채 남으면 그게 더 이상하다.
+   */
+  const openAll = () => {
+    if (done || sweeping || busy !== null) return;
+    const rest = Array.from({ length: people }, (_, i) => i + 1).filter(
+      (n) => !opened.includes(n),
+    );
+    if (rest.length === 0) return;
+    const step = waitFor(FLIP_MS / 2);
+    // 움직임을 줄여 달라고 했으면 물결도 없다. 한 번에 다 편다.
+    if (step === 0) {
+      setOpened((prev) => [...prev, ...rest]);
+      return;
+    }
+    setSweeping(true);
+    rest.forEach((n, i) => {
+      timers.current.push(
+        setTimeout(() => setBusy(n), i * step),
+        setTimeout(() => {
+          setOpened((prev) => [...prev, n]);
+          setBusy(null);
+        }, i * step + step),
+      );
+    });
+    timers.current.push(
+      setTimeout(() => setSweeping(false), rest.length * step),
+    );
   };
 
   const bump = (delta: number) =>
@@ -247,14 +288,27 @@ export function BillView() {
 
       <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
         {game === "slip" ? (
-          <Slips
-            people={people}
-            payers={payers}
-            opened={opened}
-            busy={busy}
-            done={done}
-            onOpen={open}
-          />
+          <>
+            <Slips
+              people={people}
+              payers={payers}
+              opened={opened}
+              busy={busy}
+              locked={done || busy !== null || sweeping}
+              onOpen={open}
+            />
+            {/* 둘이서 눈치만 보다 끝내고 싶은 날. 한 장씩은 기본값이지 규칙이
+                아니다. 판이 끝났으면 펼 것이 없으니 버튼도 없다. */}
+            {!done && opened.length < people && (
+              <Button
+                variant="outline"
+                disabled={sweeping || busy !== null}
+                onClick={openAll}
+              >
+                {sweeping ? "펼치는 중" : "한 번에 펼치기"}
+              </Button>
+            )}
+          </>
         ) : (
           <Ladder
             people={people}
@@ -298,14 +352,15 @@ function Slips({
   payers,
   opened,
   busy,
-  done,
+  locked,
   onOpen,
 }: {
   people: number;
   payers: number[];
   opened: number[];
   busy: number | null;
-  done: boolean;
+  /** 판이 끝났거나, 다른 장이 펼쳐지는 중이거나, 한 번에 펼치는 중 */
+  locked: boolean;
   onOpen: (n: number) => void;
 }) {
   return (
@@ -325,7 +380,7 @@ function Slips({
                 : "closed"
             }
             flipping={busy === n}
-            locked={done || busy !== null}
+            locked={locked}
             onOpen={() => onOpen(n)}
           />
         </li>
