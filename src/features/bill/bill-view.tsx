@@ -1,19 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /**
- * 밥값 내기 (2026-08-09 요청). **제비뽑기로 다시 만들었다** (2026-08-12 요청).
+ * 밥값 내기 (2026-08-09 요청).
+ * **제비뽑기 / 사다리 중에 골라서 한다** (2026-08-12 요청).
  *
  * 예전에는 숫자가 드르륵 굴러가다 하나에 멈췄다. 결과는 같지만 **뽑는 사람이
  * 없었다** — 버튼을 누른 사람 하나가 답을 받아 읽어 주는 그림이라, 여럿이
- * 둘러앉아 하는 일에는 안 맞았다. 지금은 접힌 제비가 인원수만큼 깔리고
- * **한 사람씩 한 장을 연다.** 여는 차례가 곧 사람 차례다.
+ * 둘러앉아 하는 일에는 안 맞았다. 지금은 둘 다 **한 사람이 하나씩 고른다.**
+ * 고르는 차례가 곧 사람 차례다.
+ *
+ * **두 놀이가 같은 뼈대를 쓴다.** 인원, 밥값을 낼 번호(`payer`), 이미 열어 본
+ * 번호(`opened`) — 여기까지는 같고, 다른 것은 그림과 여는 방법뿐이다. 결과 줄과
+ * 다시 하기 버튼도 하나로 둔다. 놀이마다 화면을 통째로 따로 만들면 "밥값 내기"
+ * 가 둘이 되고, 한쪽만 고쳐 놓는 일이 생긴다.
  *
  * **이름을 안 받는다.** 이 앱에는 신원이 없고(SPEC §2.4) 매번 이름을 치는 건
- * 점심시간에 할 일이 아니다. 제비에 번호만 적어 두면, 번호로 나눠 갖든 그냥
- * 아무 장이나 집든 둘 다 굴러간다.
+ * 점심시간에 할 일이 아니다. 번호만 있으면, 번호를 나눠 갖든 아무거나 집든
+ * 둘 다 굴러간다.
  *
  * **뽑기를 클라이언트에서 한다.** CLAUDE.md 의 "추천 결과는 서버가 결정한다" 는
  * 규칙은 여기 안 걸린다. 그 규칙이 있는 이유는 추천의 후보 풀이 서버에 있기
@@ -22,37 +28,49 @@ import { Button } from "@/components/ui/button";
  * 못 쓰게 된다.
  *
  * **당첨은 한 판이 시작될 때 이미 정해져 있다.** 여는 순간에 정하면, 마지막
- * 한 장이 남았을 때 그 장이 당첨일 확률이 1이 아니게 되거나(다시 굴리면)
- * 반대로 앞에서 나올 수가 없어진다. 종이 제비도 접는 순간 이미 정해져 있다 —
- * 여는 것은 확인이지 추첨이 아니다.
+ * 하나가 남았을 때 그게 당첨일 확률이 1이 아니게 되거나 반대로 앞에서 나올 수가
+ * 없어진다. 종이 제비도 사다리도 **놓는 순간** 이미 정해져 있다 — 여는 것은
+ * 확인이지 추첨이 아니다.
  */
 
 const MIN = 2;
 const MAX = 20;
+
+type Game = "slip" | "ladder";
+const GAMES: { key: Game; label: string }[] = [
+  { key: "slip", label: "제비뽑기" },
+  { key: "ladder", label: "사다리" },
+];
+
 /** 제비 한 장이 펼쳐지는 시간. globals.css 의 `--animate-slip-open` 과 같은 값 */
 const FLIP_MS = 340;
+/** 사다리 한 줄을 다 긋는 시간. `--animate-ladder-trace` 와 같은 값 */
+const TRACE_MS = 750;
 
 /**
- * 뒤집기 가운데에서 앞뒤를 바꾼다. 종이가 모로 서서 안 보이는 순간이라
- * 바뀌는 게 안 보인다 — 0에 바꾸면 펼치기도 전에 답이 보인다.
+ * 연출이 끝나기를 기다리는 시간.
  *
  * 움직임을 줄여 달라고 했으면 **기다리지 않는다.** 전역 미디어쿼리가 애니메이션은
  * 0.01ms 로 줄여 주지만 이 타이머는 CSS 가 아니라서 안 줄어든다. 그대로 두면
- * 연출은 없는데 답만 0.17초 늦게 나오는, 그냥 굼뜬 화면이 된다.
+ * 연출은 없는데 답만 늦게 나오는, 그냥 굼뜬 화면이 된다.
  */
-function swapDelay() {
-  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  return reduce ? 0 : FLIP_MS / 2;
+function waitFor(ms: number) {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ? 0
+    : ms;
 }
 
 export function BillView() {
+  const [game, setGame] = useState<Game>("slip");
   const [people, setPeople] = useState(3);
-  /** 밥값을 내는 제비. 한 판이 시작될 때 정해진다 */
+  /** 밥값을 내는 번호. 한 판이 시작될 때 정해진다 */
   const [payer, setPayer] = useState<number | null>(null);
-  /** 펼친 제비들. 넣은 순서가 곧 뽑은 순서다 */
+  /** 사다리 가로줄. 판마다 새로 놓는다 (제비뽑기에서는 안 쓴다) */
+  const [rungs, setRungs] = useState<boolean[][]>([]);
+  /** 이미 열어 본 번호들. 넣은 순서가 곧 뽑은 순서다 */
   const [opened, setOpened] = useState<number[]>([]);
-  /** 지금 펼쳐지는 중인 한 장 */
-  const [flipping, setFlipping] = useState<number | null>(null);
+  /** 지금 열리는 중인 하나 */
+  const [busy, setBusy] = useState<number | null>(null);
 
   // 타이머를 정리하지 않으면 모달을 닫은 뒤에도 상태를 건드린다.
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -64,38 +82,76 @@ export function BillView() {
   );
 
   /**
-   * 새 판. 인원이 바뀌면 자동으로 다시 접는다 — "4명 중 5번" 이 남으면 안 된다.
-   * `Math.random()` 은 서버에 없어도 되는 값이라 이펙트 안에서만 부른다.
+   * 새 판. 인원이나 놀이가 바뀌면 자동으로 다시 깐다 — "4명 중 5번" 이 남으면
+   * 안 된다. `Math.random()` 은 서버에 없어도 되는 값이라 이펙트 안에서만 부른다.
    */
-  useEffect(() => {
-    setPayer(1 + Math.floor(Math.random() * people));
+  const deal = (n: number) => {
+    setPayer(1 + Math.floor(Math.random() * n));
+    setRungs(makeRungs(n));
     setOpened([]);
-    setFlipping(null);
-  }, [people]);
+    setBusy(null);
+  };
+  useEffect(() => {
+    deal(people);
+  }, [people, game]);
 
   const done = payer !== null && opened.includes(payer);
 
-  const openSlip = (n: number) => {
-    if (done || opened.includes(n) || flipping !== null) return;
-    setFlipping(n);
-    const t = setTimeout(() => {
-      setOpened((prev) => [...prev, n]);
-      setFlipping(null);
-    }, swapDelay());
+  const open = (n: number) => {
+    if (done || opened.includes(n) || busy !== null) return;
+    setBusy(n);
+    const t = setTimeout(
+      () => {
+        setOpened((prev) => [...prev, n]);
+        setBusy(null);
+      },
+      waitFor(game === "slip" ? FLIP_MS / 2 : TRACE_MS),
+    );
     timers.current.push(t);
-  };
-
-  const reshuffle = () => {
-    setPayer(1 + Math.floor(Math.random() * people));
-    setOpened([]);
-    setFlipping(null);
   };
 
   const bump = (delta: number) =>
     setPeople((n) => Math.min(MAX, Math.max(MIN, n + delta)));
 
+  const status = done
+    ? `${payer}번이 내는 걸로`
+    : opened.length === 0
+      ? game === "slip"
+        ? "한 장씩 뽑아 주세요"
+        : "줄을 하나 골라 주세요"
+      : game === "slip"
+        ? `${opened.length}장 열었어요. 다음 분 뽑으세요`
+        : `${opened.length}줄 탔어요. 다음 분 고르세요`;
+
   return (
     <div className="flex flex-col gap-5">
+      {/* 놀이 고르기. 결과는 어느 쪽이나 같으니 **취향 문제**고, 그래서 위에 둔다 —
+          인원보다 먼저 정하는 것이 자연스럽다 */}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">어떻게 정할까요</legend>
+        <div
+          role="group"
+          className="flex gap-1 self-start rounded-chip border border-border p-1"
+        >
+          {GAMES.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              // 고른 쪽을 색으로만 알리지 않는다. aria-pressed 가 소리로도 읽힌다.
+              aria-pressed={game === g.key}
+              onClick={() => setGame(g.key)}
+              className={`rounded-chip px-3 py-1.5 text-label transition-colors ${
+                game === g.key
+                  ? "bg-primary font-medium text-primary-foreground"
+                  : "text-foreground hover:bg-muted"
+              }`}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
       <fieldset className="flex flex-col gap-2">
         <legend className="text-label font-medium">몇 명이에요</legend>
         <div className="flex items-center gap-3">
@@ -126,43 +182,41 @@ export function BillView() {
       </fieldset>
 
       <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-        {/* 다섯 줄로 고정한다. 인원에 따라 열을 바꾸면 같은 화면이 매번 다른
-            모양이 되고, 360px 에서 스무 장이 한 줄에 못 들어간다. */}
-        <ul className="grid grid-cols-5 gap-2">
-          {Array.from({ length: people }, (_, i) => i + 1).map((n) => (
-            <li key={n}>
-              <Slip
-                n={n}
-                state={
-                  opened.includes(n)
-                    ? n === payer
-                      ? "payer"
-                      : "miss"
-                    : "closed"
-                }
-                flipping={flipping === n}
-                locked={done || flipping !== null}
-                onOpen={() => openSlip(n)}
-              />
-            </li>
-          ))}
-        </ul>
+        {game === "slip" ? (
+          <Slips
+            people={people}
+            payer={payer}
+            opened={opened}
+            busy={busy}
+            done={done}
+            onOpen={open}
+          />
+        ) : (
+          <Ladder
+            people={people}
+            rungs={rungs}
+            payer={payer}
+            opened={opened}
+            busy={busy}
+            done={done}
+            onOpen={open}
+          />
+        )}
 
-        {/* 결과는 글자로 알린다. 제비 색만 바뀌면 스크린리더가 아무 말도 안 한다 */}
+        {/* 결과는 글자로 알린다. 칸 색만 바뀌면 스크린리더가 아무 말도 안 한다 */}
         <p aria-live="polite" className="text-body">
-          {done
-            ? `${payer}번이 내는 걸로`
-            : opened.length === 0
-              ? "한 장씩 뽑아 주세요"
-              : `${opened.length}장 열었어요. 다음 분 뽑으세요`}
+          {status}
         </p>
       </div>
 
       <div className="flex flex-col gap-2">
-        {/* 뽑는 건 제비를 누르는 것이다. 이 버튼은 **다시 접는** 버튼이라
-            이름도 그렇게 쓴다 — "다시 뽑기" 면 이걸 눌러야 뽑히는 줄 안다. */}
-        <Button variant={done ? "primary" : "outline"} onClick={reshuffle}>
-          다시 접기
+        {/* 뽑는 건 제비를 누르거나 줄을 고르는 것이다. 이 버튼은 **다시 까는**
+            버튼이라 이름도 그렇게 쓴다 — "다시 뽑기" 면 이걸 눌러야 뽑히는 줄 안다. */}
+        <Button
+          variant={done ? "primary" : "outline"}
+          onClick={() => deal(people)}
+        >
+          {game === "slip" ? "다시 접기" : "다시 놓기"}
         </Button>
         {/* 번호를 누가 가질지는 앱이 모른다. 그 사실을 숨기지 않고 적는다 */}
         <p className="text-caption text-muted-foreground">
@@ -170,6 +224,44 @@ export function BillView() {
         </p>
       </div>
     </div>
+  );
+}
+
+/* ────────────────────────── 제비뽑기 ────────────────────────── */
+
+function Slips({
+  people,
+  payer,
+  opened,
+  busy,
+  done,
+  onOpen,
+}: {
+  people: number;
+  payer: number | null;
+  opened: number[];
+  busy: number | null;
+  done: boolean;
+  onOpen: (n: number) => void;
+}) {
+  return (
+    // 다섯 줄로 고정한다. 인원에 따라 열을 바꾸면 같은 화면이 매번 다른 모양이
+    // 되고, 360px 에서 스무 장이 한 줄에 못 들어간다.
+    <ul className="grid grid-cols-5 gap-2">
+      {Array.from({ length: people }, (_, i) => i + 1).map((n) => (
+        <li key={n}>
+          <Slip
+            n={n}
+            state={
+              opened.includes(n) ? (n === payer ? "payer" : "miss") : "closed"
+            }
+            flipping={busy === n}
+            locked={done || busy !== null}
+            onOpen={() => onOpen(n)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -239,5 +331,252 @@ function Slip({
         </span>
       )}
     </button>
+  );
+}
+
+/* ────────────────────────── 사다리 ────────────────────────── */
+
+/** 사다리 좌표계 한 칸. 뷰박스 안의 값이라 화면 크기와 무관하다 */
+const CELL = 10;
+/** 세로줄 하나가 화면에서 차지할 최소 너비. 손가락이 닿으려면 이 정도는 있어야 한다 */
+const COL_REM = 2.5;
+/** 사다리 그림의 높이 */
+const LADDER_REM = 11;
+
+/** 가로줄 층 수. 인원이 늘면 같이 늘리되 너무 촘촘해지지 않게 막는다 */
+function rowsFor(people: number) {
+  return Math.min(12, Math.max(5, people + 1));
+}
+
+/**
+ * 가로줄을 놓는다. `rungs[층][i]` = i번 세로줄과 i+1번 세로줄 사이에 줄이 있다.
+ *
+ * **한 층에서 이웃한 두 자리에 같이 놓지 않는다.** 붙여 놓으면 한 층에서 두 칸을
+ * 건너뛰게 되는데, 그건 사다리가 아니라 그냥 뒤섞기다 (눈으로 따라갈 수도 없다).
+ */
+function makeRungs(people: number): boolean[][] {
+  const rows = rowsFor(people);
+  const out: boolean[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const row = new Array<boolean>(Math.max(0, people - 1)).fill(false);
+    for (let i = 0; i < row.length; i++) {
+      if (i > 0 && row[i - 1]) continue;
+      if (Math.random() < 0.45) row[i] = true;
+    }
+    out.push(row);
+  }
+  // 한 줄도 없으면 사다리가 아니라 세로줄 몇 개다. 그때만 하나 끼워 넣는다.
+  if (people >= 2 && !out.some((row) => row.some(Boolean))) {
+    out[Math.floor(rows / 2)][Math.floor(Math.random() * (people - 1))] = true;
+  }
+  return out;
+}
+
+/** 세로줄 i 의 x 좌표 (칸 한가운데) */
+const colX = (i: number) => i * CELL + CELL / 2;
+
+/**
+ * 위에서 `top`번 줄로 내려가는 길. 사다리를 그대로 따라 내려간다.
+ * 그리는 데 쓸 `d` 와 도착한 세로줄 번호를 함께 돌려준다.
+ */
+function trace(top: number, rungs: boolean[][]) {
+  let c = top - 1;
+  const parts = [`M ${colX(c)} 0`];
+  rungs.forEach((row, r) => {
+    const y = (r + 1) * CELL;
+    parts.push(`L ${colX(c)} ${y}`);
+    if (c > 0 && row[c - 1]) c -= 1;
+    else if (c < row.length && row[c]) c += 1;
+    else return;
+    parts.push(`L ${colX(c)} ${y}`);
+  });
+  parts.push(`L ${colX(c)} ${(rungs.length + 1) * CELL}`);
+  return { d: parts.join(" "), end: c + 1 };
+}
+
+/**
+ * 사다리타기.
+ *
+ * 위 번호를 하나 고르면 줄이 그어지며 내려가고, 도착한 자리가 열린다. 아래
+ * 칸은 **닿기 전에는 「?」** 다 — 다 보여 주면 눈으로 따라가서 답을 미리 알 수
+ * 있고, 그러면 남은 사람들이 고를 이유가 없어진다.
+ *
+ * 그림은 SVG 다. 세로줄·가로줄은 선 하나씩이라 캔버스를 쓸 이유가 없고,
+ * 색도 클래스(`stroke-border`)로 줄 수 있어 토큰이 코드로 새지 않는다.
+ */
+function Ladder({
+  people,
+  rungs,
+  payer,
+  opened,
+  busy,
+  done,
+  onOpen,
+}: {
+  people: number;
+  rungs: boolean[][];
+  payer: number | null;
+  opened: number[];
+  busy: number | null;
+  done: boolean;
+  onOpen: (n: number) => void;
+}) {
+  const paths = useMemo(
+    () =>
+      rungs.length === 0
+        ? []
+        : Array.from({ length: people }, (_, i) => trace(i + 1, rungs)),
+    [people, rungs],
+  );
+  if (paths.length === 0) return null;
+
+  const H = (rungs.length + 1) * CELL;
+  const W = people * CELL;
+  /** 밥값이 걸린 아래 칸. 여기 도착하는 위 번호가 곧 `payer` 다 */
+  const payerEnd = payer === null ? null : paths[payer - 1].end;
+  /** 아래 칸 j 가 이미 열렸는가 = 거기로 내려온 위 번호가 하나라도 열렸는가 */
+  const endOpened = (j: number) => opened.some((n) => paths[n - 1].end === j);
+  // **밥값 줄을 맨 나중에 그린다.** 앞에 그리면 나중에 탄 줄이 그 위를 덮어서
+  // 답이 중간에 끊긴 것처럼 보인다 (실제로 그렇게 보였다).
+  const drawn = [...opened, ...(busy === null ? [] : [busy])].sort(
+    (a, b) => Number(a === payer) - Number(b === payer),
+  );
+
+  return (
+    // 스무 명이면 세로줄 스무 개다. 폭을 다 나눠 쓰면 손가락이 안 닿으니
+    // **가로로 밀어서** 본다. 바깥 문서는 안 넘친다 (이 상자만 스크롤한다).
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div style={{ minWidth: `${people * COL_REM}rem` }}>
+        {/* 위 번호 = 고르는 자리. 칸 사이에 틈을 안 둔다 — 틈이 있으면 칸
+            한가운데가 아래 세로줄과 어긋난다 */}
+        <ul
+          className="grid"
+          style={{ gridTemplateColumns: `repeat(${people}, minmax(0, 1fr))` }}
+        >
+          {Array.from({ length: people }, (_, i) => i + 1).map((n) => {
+            const taken = opened.includes(n);
+            return (
+              <li key={n} className="px-0.5">
+                <button
+                  type="button"
+                  disabled={taken || done || busy !== null}
+                  aria-label={
+                    taken
+                      ? n === payer
+                        ? `${n}번 — 밥값`
+                        : `${n}번 — 꽝`
+                      : `${n}번 줄 타기`
+                  }
+                  onClick={() => onOpen(n)}
+                  className={`tnum w-full rounded-md border py-1 text-label ${
+                    taken
+                      ? n === payer
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-muted text-muted-foreground"
+                      : done
+                        ? "border-border bg-muted text-muted-foreground"
+                        : "border-border bg-background hover:bg-muted"
+                  }`}
+                >
+                  {n}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* 그림은 이름을 안 갖는다. 무엇이 일어났는지는 위아래 칸의 이름과
+            바깥 aria-live 가 말한다 */}
+        <svg
+          aria-hidden="true"
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          className="w-full"
+          style={{ height: `${LADDER_REM}rem` }}
+        >
+          {/* 세로줄. `vector-effect` 가 없으면 뷰박스를 늘린 만큼 선도 굵어진다 */}
+          {Array.from({ length: people }, (_, i) => (
+            <line
+              key={i}
+              x1={colX(i)}
+              y1={0}
+              x2={colX(i)}
+              y2={H}
+              className="stroke-border"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {rungs.map((row, r) =>
+            row.map((on, i) =>
+              on ? (
+                <line
+                  key={`${r}-${i}`}
+                  x1={colX(i)}
+                  y1={(r + 1) * CELL}
+                  x2={colX(i + 1)}
+                  y2={(r + 1) * CELL}
+                  className="stroke-border"
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null,
+            ),
+          )}
+          {/* 이미 탄 줄은 그대로 남는다. 누가 어디로 갔는지가 판 위에 쌓여야
+              "다음은 어디" 를 서로 보고 정할 수 있다 */}
+          {drawn.map((n) => (
+            <path
+              key={n}
+              d={paths[n - 1].d}
+              fill="none"
+              // 지나간 줄은 한 톤 죽인다. 밥값 줄과 같은 굵기·같은 검정으로
+              // 두면 사다리 가로줄까지 섞여 판이 그냥 새까매진다.
+              className={
+                n === payer ? "stroke-primary" : "stroke-muted-foreground"
+              }
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              // 길이를 1로 두면 줄이 길든 짧든 같은 속도로 그어진다
+              pathLength={1}
+              strokeDasharray={1}
+              style={
+                n === busy
+                  ? { animation: "var(--animate-ladder-trace)" }
+                  : undefined
+              }
+            />
+          ))}
+        </svg>
+
+        {/* 아래 칸 = 결과. 닿기 전에는 「?」 다 */}
+        <ul
+          className="grid"
+          style={{ gridTemplateColumns: `repeat(${people}, minmax(0, 1fr))` }}
+        >
+          {Array.from({ length: people }, (_, j) => j + 1).map((j) => {
+            const shown = endOpened(j);
+            const isPayer = j === payerEnd;
+            return (
+              <li key={j} className="px-0.5">
+                <span
+                  className={`block rounded-md border py-1 text-center text-caption ${
+                    shown
+                      ? isPayer
+                        ? "border-primary bg-primary font-medium text-primary-foreground"
+                        : "border-border bg-muted text-muted-foreground"
+                      : "border-dashed border-border text-muted-foreground"
+                  }`}
+                >
+                  {shown ? (isPayer ? "밥값" : "꽝") : "?"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
   );
 }

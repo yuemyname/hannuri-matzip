@@ -122,6 +122,10 @@
      안 보이는데, 그 순간에 앞뒤 내용이 바뀐다 — 3D 없이 뒤집힌 것처럼 읽힌다.
      prefers-reduced-motion 이면 위 미디어쿼리가 0.01ms 로 줄여 사실상 사라진다. */
   --animate-slip-open: slip-open 0.34s var(--ease-out-soft) both;
+  /* 사다리 한 줄이 위에서 아래로 그어지는 동안. `pathLength="1"` 을 걸어 두면
+     선 길이와 무관하게 0~1 이라, 줄마다 속도가 달라지지 않는다.
+     prefers-reduced-motion 이면 위 미디어쿼리가 0.01ms 로 줄여 사실상 사라진다. */
+  --animate-ladder-trace: ladder-trace 0.75s var(--ease-out-soft) both;
 }
 
 @keyframes pick-spin {
@@ -144,6 +148,13 @@
   0%   { transform: scaleX(1); }
   50%  { transform: scaleX(0.06); }
   100% { transform: scaleX(1); }
+}
+
+/* 사다리 줄이 그어지는 모습. 선을 통째로 점선 하나로 만들어 두고 그 점선을
+   밀어 넣는다 — 실제로 자라는 게 아니라 가려져 있던 것이 드러나는 것이다. */
+@keyframes ladder-trace {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
 }
 
 /* ------------------------------------------------------------
