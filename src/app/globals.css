@@ -118,6 +118,10 @@
      기어가는 것처럼 보였다 — 시간은 다 쓰는데 "벌써 섰나" 로 읽힌다.
      이 곡선은 절반에 75%, 80% 시점에 96% 로 끝까지 눈에 띄게 움직인다. */
   --ease-roulette: cubic-bezier(0.2, 0.4, 0.55, 1);
+  /* 밥값 내기 제비를 펼치는 한 번짜리 뒤집기. 가운데(50%)에서 종이가 모로 서서
+     안 보이는데, 그 순간에 앞뒤 내용이 바뀐다 — 3D 없이 뒤집힌 것처럼 읽힌다.
+     prefers-reduced-motion 이면 위 미디어쿼리가 0.01ms 로 줄여 사실상 사라진다. */
+  --animate-slip-open: slip-open 0.34s var(--ease-out-soft) both;
 }
 
 @keyframes pick-spin {
@@ -132,6 +136,14 @@
   0%   { transform: translateY(0)    scale(1); }
   45%  { transform: translateY(-6px) scale(1.12); }
   100% { transform: translateY(0)    scale(1); }
+}
+
+/* 제비 한 장이 펼쳐지는 순간. 0으로 완전히 눕히지 않는다 — 0이면 그 프레임에
+   종이가 사라진 것처럼 보인다. 살짝 남겨 두면 모로 선 종이로 읽힌다. */
+@keyframes slip-open {
+  0%   { transform: scaleX(1); }
+  50%  { transform: scaleX(0.06); }
+  100% { transform: scaleX(1); }
 }
 
 /* ------------------------------------------------------------
