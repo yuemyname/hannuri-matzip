@@ -29,15 +29,18 @@ export function PageShell({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-[var(--z-header)] flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-2">
+      {/* 제목을 **가운데** 둔다 (2026-08-12 요청, 모달 머리와 같은 규칙).
+          오른쪽에 [뒤로] 와 같은 몫의 빈 칸을 둬야 진짜 가운데에 온다. */}
+      <header className="sticky top-0 z-[var(--z-header)] grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-border bg-background px-2">
         <button
           type="button"
           onClick={back}
-          className="rounded-chip px-3 py-1.5 text-label text-brand-700 hover:bg-accent"
+          className="justify-self-start rounded-chip px-3 py-1.5 text-label whitespace-nowrap text-brand-700 hover:bg-accent"
         >
           뒤로
         </button>
-        <h1 className="min-w-0 truncate text-subtitle">{title}</h1>
+        <h1 className="min-w-0 truncate text-center text-subtitle">{title}</h1>
+        <span />
       </header>
 
       <main className="flex-1 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">

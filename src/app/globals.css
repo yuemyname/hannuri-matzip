@@ -120,12 +120,17 @@
   --ease-roulette: cubic-bezier(0.2, 0.4, 0.55, 1);
   /* 밥값 내기 제비를 펼치는 한 번짜리 뒤집기. 가운데(50%)에서 종이가 모로 서서
      안 보이는데, 그 순간에 앞뒤 내용이 바뀐다 — 3D 없이 뒤집힌 것처럼 읽힌다.
+     **등속이라야 한다.** `--ease-out-soft` 는 절반 시점에 이미 96% 를 가 버려서
+     종이가 도로 펴진 뒤에 글자가 바뀐다 — 바뀌는 게 그대로 보인다.
      prefers-reduced-motion 이면 위 미디어쿼리가 0.01ms 로 줄여 사실상 사라진다. */
-  --animate-slip-open: slip-open 0.34s var(--ease-out-soft) both;
-  /* 사다리 한 줄이 위에서 아래로 그어지는 동안. `pathLength="1"` 을 걸어 두면
-     선 길이와 무관하게 0~1 이라, 줄마다 속도가 달라지지 않는다.
+  --animate-slip-open: slip-open 0.34s linear both;
+  /* 사다리 한 줄이 위에서 아래로 그어지는 동안. **덮개를 걷어서** 보여 준다
+     (`stroke-dasharray` 로 하면 판을 가로로 늘려 놓은 탓에 점선 길이가 어긋나
+     선이 중간중간 끊긴다 — 실제로 그렇게 보였다).
+     여기도 **등속**이다. `--ease-out-soft` 로 걸었더니 0.28초 만에 이미 끝까지
+     그어져 있었다. 줄을 따라 내려가는 그림이라 일정한 속도가 맞기도 하다.
      prefers-reduced-motion 이면 위 미디어쿼리가 0.01ms 로 줄여 사실상 사라진다. */
-  --animate-ladder-trace: ladder-trace 0.75s var(--ease-out-soft) both;
+  --animate-ladder-trace: ladder-trace 0.75s linear both;
 }
 
 @keyframes pick-spin {
@@ -150,11 +155,17 @@
   100% { transform: scaleX(1); }
 }
 
-/* 사다리 줄이 그어지는 모습. 선을 통째로 점선 하나로 만들어 두고 그 점선을
-   밀어 넣는다 — 실제로 자라는 게 아니라 가려져 있던 것이 드러나는 것이다. */
+/* 사다리 줄이 그어지는 모습. **줄 위에 덮개를 씌웠다가 위에서부터 걷는다.**
+   줄은 처음부터 다 그려져 있고 보이는 부분만 늘어난다.
+   - 점선(`stroke-dasharray`)으로 하면 판을 가로로 늘려 놓은 탓에 길이가 어긋나
+     다 그어진 줄이 중간중간 끊겨 보인다 (실제로 그랬다).
+   - `<clipPath>` 안의 도형을 움직이는 방법도 안 된다 — 그 안의 요소는 그려지지
+     않아서 CSS 애니메이션이 아예 시작하지 않는다 (역시 확인했다).
+   좌우로 20% 씩 넘겨 잡는 것은 선 굵기 때문이다. 딱 맞추면 끝이 잘려 보인다.
+   clip-path 를 모르는 브라우저에서는 줄이 그냥 바로 다 보인다. */
 @keyframes ladder-trace {
-  from { stroke-dashoffset: 1; }
-  to   { stroke-dashoffset: 0; }
+  from { clip-path: inset(-20% -20% 100% -20%); }
+  to   { clip-path: inset(-20% -20% -20% -20%); }
 }
 
 /* ------------------------------------------------------------

@@ -42,6 +42,13 @@ const GAMES: { key: Game; label: string }[] = [
   { key: "ladder", label: "사다리" },
 ];
 
+/**
+ * 열린 칸에 적히는 말 (2026-08-12 요청: 꽝 → 냐미, 밥값 → 잘먹었습니다).
+ * 한 군데서만 적는다 — 제비와 사다리가 같은 말을 써야 두 놀이가 한 화면으로 읽힌다.
+ */
+const PAY = "잘먹었습니다";
+const FREE = "냐미";
+
 /** 제비 한 장이 펼쳐지는 시간. globals.css 의 `--animate-slip-open` 과 같은 값 */
 const FLIP_MS = 340;
 /** 사다리 한 줄을 다 긋는 시간. `--animate-ladder-trace` 와 같은 값 */
@@ -60,11 +67,29 @@ function waitFor(ms: number) {
     : ms;
 }
 
+/**
+ * 당첨을 뽑는다. **한 판이 시작될 때 한 번**이고, 서로 다른 번호가 나온다.
+ * (같은 번호가 두 번 뽑히면 당첨자 수가 조용히 줄어든다)
+ */
+function drawPayers(people: number, winners: number): number[] {
+  const pool = Array.from({ length: people }, (_, i) => i + 1);
+  const out: number[] = [];
+  for (let k = 0; k < Math.min(winners, people); k++) {
+    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  }
+  return out.sort((a, b) => a - b);
+}
+
 export function BillView() {
   const [game, setGame] = useState<Game>("slip");
   const [people, setPeople] = useState(3);
-  /** 밥값을 내는 번호. 한 판이 시작될 때 정해진다 */
-  const [payer, setPayer] = useState<number | null>(null);
+  /**
+   * 몇 명이 낼지 (2026-08-12 요청). 한 명은 남겨 둔다 — 전원이 당첨이면
+   * 뽑을 게 없다.
+   */
+  const [winners, setWinners] = useState(1);
+  /** 밥값을 내는 번호들. 한 판이 시작될 때 정해진다 */
+  const [payers, setPayers] = useState<number[]>([]);
   /** 사다리 가로줄. 판마다 새로 놓는다 (제비뽑기에서는 안 쓴다) */
   const [rungs, setRungs] = useState<boolean[][]>([]);
   /** 이미 열어 본 번호들. 넣은 순서가 곧 뽑은 순서다 */
@@ -85,17 +110,19 @@ export function BillView() {
    * 새 판. 인원이나 놀이가 바뀌면 자동으로 다시 깐다 — "4명 중 5번" 이 남으면
    * 안 된다. `Math.random()` 은 서버에 없어도 되는 값이라 이펙트 안에서만 부른다.
    */
-  const deal = (n: number) => {
-    setPayer(1 + Math.floor(Math.random() * n));
+  const deal = (n: number, w: number) => {
+    setPayers(drawPayers(n, w));
     setRungs(makeRungs(n));
     setOpened([]);
     setBusy(null);
   };
   useEffect(() => {
-    deal(people);
-  }, [people, game]);
+    deal(people, Math.min(winners, people - 1));
+  }, [people, winners, game]);
 
-  const done = payer !== null && opened.includes(payer);
+  // 당첨을 **다 찾으면** 끝이다. 하나라도 안 나왔으면 아직 뽑을 게 남아 있다.
+  const done =
+    payers.length > 0 && payers.every((p) => opened.includes(p));
 
   const open = (n: number) => {
     if (done || opened.includes(n) || busy !== null) return;
@@ -111,10 +138,17 @@ export function BillView() {
   };
 
   const bump = (delta: number) =>
-    setPeople((n) => Math.min(MAX, Math.max(MIN, n + delta)));
+    setPeople((n) => {
+      const next = Math.min(MAX, Math.max(MIN, n + delta));
+      // 사람이 줄면 당첨자 수도 따라 줄어야 한다. "3명 중 4명이 낸다" 는 없다.
+      setWinners((w) => Math.min(w, next - 1));
+      return next;
+    });
+  const bumpWinners = (delta: number) =>
+    setWinners((w) => Math.min(people - 1, Math.max(1, w + delta)));
 
   const status = done
-    ? `${payer}번이 내는 걸로`
+    ? `${payers.join("번, ")}번이 내는 걸로`
     : opened.length === 0
       ? game === "slip"
         ? "한 장씩 뽑아 주세요"
@@ -181,11 +215,41 @@ export function BillView() {
         </p>
       </fieldset>
 
+      {/* 당첨자 수 (2026-08-12 요청). 회식비를 둘이 나눠 내는 날이 있다.
+          **한 명은 남겨 둔다** — 전원이 당첨이면 뽑을 것이 없다. */}
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-label font-medium">몇 명이 낼까요</legend>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            aria-label="내는 사람 줄이기"
+            disabled={winners <= 1}
+            onClick={() => bumpWinners(-1)}
+          >
+            −
+          </Button>
+          <output className="tnum min-w-16 text-center text-display">
+            {winners}
+          </output>
+          <Button
+            variant="outline"
+            aria-label="내는 사람 늘리기"
+            disabled={winners >= people - 1}
+            onClick={() => bumpWinners(1)}
+          >
+            +
+          </Button>
+        </div>
+        <p className="text-caption text-muted-foreground">
+          {people - 1}명까지 정할 수 있어요
+        </p>
+      </fieldset>
+
       <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
         {game === "slip" ? (
           <Slips
             people={people}
-            payer={payer}
+            payers={payers}
             opened={opened}
             busy={busy}
             done={done}
@@ -195,7 +259,7 @@ export function BillView() {
           <Ladder
             people={people}
             rungs={rungs}
-            payer={payer}
+            payers={payers}
             opened={opened}
             busy={busy}
             done={done}
@@ -214,7 +278,7 @@ export function BillView() {
             버튼이라 이름도 그렇게 쓴다 — "다시 뽑기" 면 이걸 눌러야 뽑히는 줄 안다. */}
         <Button
           variant={done ? "primary" : "outline"}
-          onClick={() => deal(people)}
+          onClick={() => deal(people, winners)}
         >
           {game === "slip" ? "다시 접기" : "다시 놓기"}
         </Button>
@@ -231,29 +295,34 @@ export function BillView() {
 
 function Slips({
   people,
-  payer,
+  payers,
   opened,
   busy,
   done,
   onOpen,
 }: {
   people: number;
-  payer: number | null;
+  payers: number[];
   opened: number[];
   busy: number | null;
   done: boolean;
   onOpen: (n: number) => void;
 }) {
   return (
-    // 다섯 줄로 고정한다. 인원에 따라 열을 바꾸면 같은 화면이 매번 다른 모양이
-    // 되고, 360px 에서 스무 장이 한 줄에 못 들어간다.
-    <ul className="grid grid-cols-5 gap-2">
+    // 네 줄로 고정한다. 인원에 따라 열을 바꾸면 같은 화면이 매번 다른 모양이 되고,
+    // 360px 에서 스무 장이 한 줄에 못 들어간다. 다섯 줄이던 것을 넷으로 줄였다 —
+    // 「잘먹었습니다」가 들어가려면 이 정도 폭은 있어야 한다 (2026-08-12).
+    <ul className="grid grid-cols-4 gap-2">
       {Array.from({ length: people }, (_, i) => i + 1).map((n) => (
         <li key={n}>
           <Slip
             n={n}
             state={
-              opened.includes(n) ? (n === payer ? "payer" : "miss") : "closed"
+              opened.includes(n)
+                ? payers.includes(n)
+                  ? "payer"
+                  : "miss"
+                : "closed"
             }
             flipping={busy === n}
             locked={done || busy !== null}
@@ -309,13 +378,11 @@ function Slip({
       aria-label={
         state === "closed"
           ? `${n}번 제비 뽑기`
-          : state === "payer"
-            ? `${n}번 — 밥값`
-            : `${n}번 — 꽝`
+          : `${n}번 — ${state === "payer" ? PAY : FREE}`
       }
       onClick={onOpen}
       // 잠겨도 자리는 그대로 둔다. 몇 장이 남았는지가 보여야 한다.
-      className={`flex aspect-[3/4] w-full flex-col items-center justify-center gap-1 rounded-md ${face}`}
+      className={`flex aspect-[4/5] w-full flex-col items-center justify-center gap-0.5 rounded-md px-1 ${face}`}
       style={flipping ? { animation: "var(--animate-slip-open)" } : undefined}
     >
       <span className="tnum text-label">{n}</span>
@@ -326,8 +393,11 @@ function Slip({
           className="w-1/2 border-b border-dashed border-border"
         />
       ) : (
-        <span className="text-caption font-medium">
-          {state === "payer" ? "밥값" : "꽝"}
+        // 「잘먹었습니다」는 한 줄에 안 들어간다. 잘라서 「잘먹었…」 로 두면
+        // 무슨 말인지 알 수 없으니 줄을 바꿔 다 보여 준다. `text-balance` 로
+        // 두 줄을 고르게 나눈다 — 그냥 두면 「잘먹었습니 / 다」 로 끊긴다.
+        <span className="text-center text-caption leading-tight font-medium text-balance">
+          {state === "payer" ? PAY : FREE}
         </span>
       )}
     </button>
@@ -338,8 +408,11 @@ function Slip({
 
 /** 사다리 좌표계 한 칸. 뷰박스 안의 값이라 화면 크기와 무관하다 */
 const CELL = 10;
-/** 세로줄 하나가 화면에서 차지할 최소 너비. 손가락이 닿으려면 이 정도는 있어야 한다 */
-const COL_REM = 2.5;
+/**
+ * 세로줄 하나가 화면에서 차지할 최소 너비. 손가락이 닿을 만큼은 되어야 하고,
+ * 아래 칸에 「잘먹었습니다」가 두 줄로 들어갈 만큼은 되어야 한다 (2026-08-12).
+ */
+const COL_REM = 3.5;
 /** 사다리 그림의 높이 */
 const LADDER_REM = 11;
 
@@ -407,7 +480,7 @@ function trace(top: number, rungs: boolean[][]) {
 function Ladder({
   people,
   rungs,
-  payer,
+  payers,
   opened,
   busy,
   done,
@@ -415,7 +488,7 @@ function Ladder({
 }: {
   people: number;
   rungs: boolean[][];
-  payer: number | null;
+  payers: number[];
   opened: number[];
   busy: number | null;
   done: boolean;
@@ -432,14 +505,14 @@ function Ladder({
 
   const H = (rungs.length + 1) * CELL;
   const W = people * CELL;
-  /** 밥값이 걸린 아래 칸. 여기 도착하는 위 번호가 곧 `payer` 다 */
-  const payerEnd = payer === null ? null : paths[payer - 1].end;
+  /** 밥값이 걸린 아래 칸들. 여기로 내려오는 위 번호가 곧 당첨이다 */
+  const payerEnds = payers.map((p) => paths[p - 1].end);
   /** 아래 칸 j 가 이미 열렸는가 = 거기로 내려온 위 번호가 하나라도 열렸는가 */
   const endOpened = (j: number) => opened.some((n) => paths[n - 1].end === j);
   // **밥값 줄을 맨 나중에 그린다.** 앞에 그리면 나중에 탄 줄이 그 위를 덮어서
   // 답이 중간에 끊긴 것처럼 보인다 (실제로 그렇게 보였다).
   const drawn = [...opened, ...(busy === null ? [] : [busy])].sort(
-    (a, b) => Number(a === payer) - Number(b === payer),
+    (a, b) => Number(payers.includes(a)) - Number(payers.includes(b)),
   );
 
   return (
@@ -462,15 +535,13 @@ function Ladder({
                   disabled={taken || done || busy !== null}
                   aria-label={
                     taken
-                      ? n === payer
-                        ? `${n}번 — 밥값`
-                        : `${n}번 — 꽝`
+                      ? `${n}번 — ${payers.includes(n) ? PAY : FREE}`
                       : `${n}번 줄 타기`
                   }
                   onClick={() => onOpen(n)}
                   className={`tnum w-full rounded-md border py-1 text-label ${
                     taken
-                      ? n === payer
+                      ? payers.includes(n)
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-muted text-muted-foreground"
                       : done
@@ -533,15 +604,14 @@ function Ladder({
               // 지나간 줄은 한 톤 죽인다. 밥값 줄과 같은 굵기·같은 검정으로
               // 두면 사다리 가로줄까지 섞여 판이 그냥 새까매진다.
               className={
-                n === payer ? "stroke-primary" : "stroke-muted-foreground"
+                payers.includes(n) ? "stroke-primary" : "stroke-muted-foreground"
               }
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
               vectorEffect="non-scaling-stroke"
-              // 길이를 1로 두면 줄이 길든 짧든 같은 속도로 그어진다
-              pathLength={1}
-              strokeDasharray={1}
+              // 지금 그어지는 줄만 위에서부터 덮개를 걷는다 (`--animate-ladder-trace`).
+              // 이미 탄 줄은 그냥 다 보인다.
               style={
                 n === busy
                   ? { animation: "var(--animate-ladder-trace)" }
@@ -558,11 +628,11 @@ function Ladder({
         >
           {Array.from({ length: people }, (_, j) => j + 1).map((j) => {
             const shown = endOpened(j);
-            const isPayer = j === payerEnd;
+            const isPayer = payerEnds.includes(j);
             return (
               <li key={j} className="px-0.5">
                 <span
-                  className={`block rounded-md border py-1 text-center text-caption ${
+                  className={`block rounded-md border px-0.5 py-1 text-center text-caption leading-tight text-balance ${
                     shown
                       ? isPayer
                         ? "border-primary bg-primary font-medium text-primary-foreground"
@@ -570,7 +640,7 @@ function Ladder({
                       : "border-dashed border-border text-muted-foreground"
                   }`}
                 >
-                  {shown ? (isPayer ? "밥값" : "꽝") : "?"}
+                  {shown ? (isPayer ? PAY : FREE) : "?"}
                 </span>
               </li>
             );

@@ -161,17 +161,21 @@ export function Modal({
             <span className="h-1 w-10 rounded-chip bg-ink-300" />
           </div>
 
-          <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 lg:pt-4">
+          {/* 제목을 **가운데** 둔다 (2026-08-12 요청). 양옆에 같은 몫의 칸을
+              두고 가운데 칸에 제목을 넣는다 — [닫기] 폭만큼만 비워 두면 글자
+              길이에 따라 제목이 좌우로 흔들린다. */}
+          <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 pb-2 lg:pt-4">
+            <span />
             <Dialog.Title
               data-modal-title
               tabIndex={-1}
-              className="text-title"
+              className="min-w-0 truncate text-center text-title"
             >
               {title}
             </Dialog.Title>
             <Dialog.Close
               aria-label="닫기"
-              className="rounded-chip px-2 py-1 text-label text-muted-foreground hover:bg-muted"
+              className="justify-self-end rounded-chip px-2 py-1 text-label whitespace-nowrap text-muted-foreground hover:bg-muted"
             >
               닫기
             </Dialog.Close>
