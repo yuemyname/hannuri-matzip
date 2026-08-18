@@ -233,8 +233,36 @@ begin
                     and rowsecurity) then
     raise exception 'spatial_ref_sys 에 RLS 가 꺼져 있다';
   end if;
+
+  -- 실제 프로젝트에서는 표 주인이 supabase_admin 이라 위 RLS 를 못 켠다.
+  -- 거기서 구멍을 막는 건 **트리거**다 (TRIGGER 권한은 소유권 없이도 쓸 수 있다).
+  if not exists (
+    select 1 from pg_trigger
+     where tgrelid = 'public.spatial_ref_sys'::regclass
+       and tgname = 'spatial_ref_sys_read_only'
+  ) then
+    raise exception 'spatial_ref_sys 읽기 전용 트리거가 없다';
+  end if;
 end
 $$;
+
+-- **트리거가 실제로 무는지**를 실제 상황 그대로 확인한다: 실제 프로젝트에는
+-- 쓰기 grant 가 남아 있고(부여자가 supabase_admin 이라 못 걷는다) RLS 도 꺼져
+-- 있다. 그 상태를 grant 로 재현하면, 문장을 세울 수 있는 건 트리거뿐이다.
+grant update on table public.spatial_ref_sys to authenticated;
+set role authenticated;
+set request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+do $$
+begin
+  begin
+    update spatial_ref_sys set srtext = '뒤틀림' where srid = 4326;
+    raise exception '쓰기 grant 가 있는데도 트리거가 안 막았다';
+  exception when insufficient_privilege then null;
+  end;
+end
+$$;
+reset role;
+revoke update on table public.spatial_ref_sys from authenticated;
 
 -- 롤을 바꾸면 그 안에서는 결과를 못 들고 나오므로 밖에 받아둔다.
 create table _rls(k text primary key, v bigint);
