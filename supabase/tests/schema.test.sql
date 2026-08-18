@@ -225,6 +225,14 @@ begin
   if n <> 6 then
     raise exception 'RLS 가 켜진 앱 테이블이 6개가 아니라 %개다', n;
   end if;
+
+  -- spatial_ref_sys 도 잠겨 있어야 한다 (2026-08-18, Supabase 보안 경고).
+  -- 우리 표가 아니라 PostGIS 표지만, public 에 있는 한 익명 키로 쓰기가 됐다.
+  if not exists (select 1 from pg_tables
+                  where schemaname = 'public' and tablename = 'spatial_ref_sys'
+                    and rowsecurity) then
+    raise exception 'spatial_ref_sys 에 RLS 가 꺼져 있다';
+  end if;
 end
 $$;
 
@@ -238,11 +246,36 @@ insert into _rls values ('anon_restaurants', (select count(*) from restaurants))
 insert into _rls values ('anon_profiles',    (select count(*) from profiles));
 reset role;
 
+-- spatial_ref_sys: **읽기는 뚫려 있어야 한다** (2026-08-18). PostGIS 가
+-- geography 계산 중에 이 표를 읽는데 RPC 는 invoker 라 이 롤로 읽는다.
+-- 잠그다가 읽기까지 막으면 지도 조회가 통째로 터진다 — 그게 이 검사의 이유다.
+set role anon;
+insert into _rls values ('anon_srid', (select count(*) from spatial_ref_sys where srid = 4326));
+reset role;
+
+-- 쓰기는 막혀야 한다. Supabase 기본 권한이 public 새 표에 쓰기까지 얹어서,
+-- 익명 키로 SRID 정의를 고칠 수 있었다 (Supabase 보안 경고의 실체).
+set role anon;
+do $$
+begin
+  begin
+    update spatial_ref_sys set srtext = '뒤틀림' where srid = 4326;
+    raise exception '익명 키로 spatial_ref_sys 가 수정됐다';
+  exception when insufficient_privilege then null;
+  end;
+end
+$$;
+reset role;
+
 -- 세션 있음 — 보여야 한다. DoD 후반부.
 set role authenticated;
 set request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
 insert into _rls values ('auth_restaurants', (select count(*) from restaurants));
 insert into _rls values ('auth_own_logs',    (select count(*) from recommendation_logs));
+-- geography 조회의 끝-끝 확인 (2026-08-18). spatial_ref_sys 를 잠근 뒤에도
+-- 반경 RPC 가 이 롤로 돌아야 한다 — 표 직접 읽기만 봐서는 모자란다.
+insert into _rls values ('auth_within',
+  (select count(*) from restaurants_within(37.5665, 126.9780, 200)));
 reset role;
 
 -- 남의 추천 로그는 안 보여야 한다 (SPEC: 본인 것만).
@@ -265,11 +298,18 @@ begin
   select _rls.v into v from _rls where k = 'anon_profiles';
   if v <> 0 then raise exception '세션 없이 profiles 가 %건 보인다 (0이어야 한다)', v; end if;
 
+  -- 잠근 뒤에도 SRID 4326 은 읽혀야 한다. 0이면 PostGIS 조회가 터질 상태다.
+  select _rls.v into v from _rls where k = 'anon_srid';
+  if v <> 1 then raise exception 'spatial_ref_sys 의 4326 이 안 읽힌다 (%건)', v; end if;
+
   select _rls.v into v from _rls where k = 'auth_restaurants';
   if v = 0 then raise exception '세션이 있는데 restaurants 가 0건이다'; end if;
 
   select _rls.v into v from _rls where k = 'auth_own_logs';
   if v <> 1 then raise exception '본인 추천 로그가 1건이 아니라 %건이다', v; end if;
+
+  select _rls.v into v from _rls where k = 'auth_within';
+  if v = 0 then raise exception 'spatial_ref_sys 를 잠근 뒤 반경 조회가 0건이다 — 읽기가 막혔을 수 있다'; end if;
 
   select _rls.v into v from _rls where k = 'other_logs';
   if v <> 0 then raise exception '남의 추천 로그가 %건 보인다 (0이어야 한다)', v; end if;

@@ -165,6 +165,14 @@ group by r.id;
 ### 2.3 RLS
 
 - 전 테이블 `enable row level security`.
+- **PostGIS 의 `spatial_ref_sys` 도 포함이다** (2026-08-18, Supabase 보안 경고).
+  우리 표가 아니라 확장이 public 에 만드는 SRID 정의표인데, Supabase 기본 권한이
+  public 의 새 표에 anon/authenticated 쓰기까지 얹는 바람에 **익명 키로 좌표계
+  정의를 고칠 수 있었다** — 4326 이 뒤틀리면 모든 거리 계산이 조용히 틀어진다.
+  RLS 를 켜고 읽기 정책만 열었다 (**읽기는 막으면 안 된다** — PostGIS 가
+  geography 계산 중에 이 표를 읽고, RPC 는 전부 invoker 다). 확장을 extensions
+  스키마로 옮기는 정공법은 PostGIS 가 재배치 불가라 못 쓴다 — 지웠다 다시 만들면
+  geography 컬럼이 통째로 딸려 나간다.
 - `select`: `auth.role() = 'authenticated'` — 세션이 있으면 전부 조회 가능.
   익명 세션도 `authenticated` 롤을 받는다 (§2.4). 세션 없이 anon 키만 있으면 거부된다.
   단 `recommendation_logs` 는 본인 것만 보인다.
